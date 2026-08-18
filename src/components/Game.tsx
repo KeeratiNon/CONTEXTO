@@ -57,6 +57,7 @@ export function Game() {
   const [secret, setSecret] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [flashWord, setFlashWord] = useState<string | null>(null);
+  const [pendingWord, setPendingWord] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const over = won || gaveUp;
@@ -168,6 +169,8 @@ export function Game() {
 
     setBusy(true);
     setError("");
+    setPendingWord(trimmed);
+    setInput("");
     try {
       const response = await fetch("/api/guess", {
         method: "POST",
@@ -176,6 +179,7 @@ export function Game() {
       });
       const data = await response.json();
       if (!response.ok) {
+        setPendingWord(null);
         setError(data.message || "I don't know this word.");
         return;
       }
@@ -186,9 +190,9 @@ export function Game() {
         fromHint,
       };
       const nextGuesses = [...guesses, guess];
+      setPendingWord(null);
       setGuesses(nextGuesses);
       setFlashWord(guess.word);
-      setInput("");
 
       if (data.correct) {
         setWon(true);
@@ -204,6 +208,7 @@ export function Game() {
         persist({ puzzleId: puzzle.id, guesses: nextGuesses });
       }
     } catch {
+      setPendingWord(null);
       setError("Network error. Try again.");
     } finally {
       setBusy(false);
@@ -222,6 +227,7 @@ export function Game() {
     setModal(null);
     setBusy(true);
     setError("");
+    setPendingWord("");
     try {
       const response = await fetch("/api/hint", {
         method: "POST",
@@ -234,12 +240,14 @@ export function Game() {
       });
       const data = await response.json();
       if (!response.ok) {
+        setPendingWord(null);
         setError(data.message || "No hint available.");
         return;
       }
       setBusy(false);
       await sendGuess(data.word, true);
     } catch {
+      setPendingWord(null);
       setError("Network error. Try again.");
     } finally {
       setBusy(false);
@@ -372,9 +380,11 @@ export function Game() {
 
       {error ? <p className="error">{error}</p> : <p className="error spacer" />}
 
-      {loadingPuzzle ? <p className="muted center">Loading puzzle…</p> : null}
-
-      {lastGuess ? (
+      {loadingPuzzle || pendingWord !== null ? (
+        <p className="calculating" aria-live="polite">
+          calculating...
+        </p>
+      ) : lastGuess ? (
         <div className="latest-guess">
           <GuessBar
             guess={lastGuess}
@@ -384,6 +394,7 @@ export function Game() {
         </div>
       ) : null}
 
+      {loadingPuzzle ? null : (
       <section className="guess-list" aria-live="polite">
         {sortedGuesses.map((guess) => (
           <GuessBar
@@ -394,6 +405,7 @@ export function Game() {
           />
         ))}
       </section>
+      )}
 
       {modal === "help" ? (
         <HowToPlay
