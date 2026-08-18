@@ -1,0 +1,3 @@
+# Railway image has no curl/unzip by default. Seed used to spawn both.
+[phases.setup]
+aptPkgs = ["curl", "unzip", "ca-certificates"]

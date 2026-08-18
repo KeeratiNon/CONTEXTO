@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { createEmbedder } from "../src/lib/embeddings";
-import { LANCEDB_DIR, META_PATH, PUZZLES_DIR, RANKS_DIR } from "../src/lib/paths";
+import { LANCEDB_DIR, META_PATH, MODELS_DIR, PUZZLES_DIR, RANKS_DIR } from "../src/lib/paths";
 import { loadVocabulary } from "../src/lib/words";
 import type { SeedMeta } from "../src/lib/types";
 import * as lancedb from "@lancedb/lancedb";
@@ -68,10 +68,11 @@ async function main() {
     seededAt: new Date().toISOString(),
   };
   fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2));
+  fs.rmSync(MODELS_DIR, { recursive: true, force: true });
 
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   console.log(`Done. ${vocab.length} vectors stored in ${seconds}s`);
-  console.log(`Next: npm run dev`);
+  console.log(`Removed downloaded embedding files to free disk`);
 }
 
 main().catch((error) => {
