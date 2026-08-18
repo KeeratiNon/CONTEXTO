@@ -1,26 +1,408 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f7f7f5;
+  --fg: #1c1c1c;
+  --muted: #6b6b6b;
+  --track: #e6e6e2;
+  --card: #ffffff;
+  --line: #d9d9d3;
+  --accent: #171717;
+  --danger: #c62828;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html.dark {
+  color-scheme: dark;
+  --bg: #121212;
+  --fg: #ffffff;
+  --muted: #d0d0d0;
+  --track: #2a2a2a;
+  --card: #1c1c1c;
+  --line: #333;
+  --accent: #ffffff;
+  --danger: #ef9a9a;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  width: min(540px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 16px 0 48px;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand {
+  text-align: center;
+}
+
+.brand h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.brand p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.dot {
+  margin: 0 6px;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 1.4rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--track);
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 18px 0 16px;
+  padding: 4px;
+  background: var(--track);
+  border-radius: 999px;
+}
+
+.tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tabs button.active {
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.guess-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.guess-form input {
+  height: 48px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 0 14px;
+  outline: none;
+}
+
+.guess-form input:focus {
+  border-color: var(--fg);
+}
+
+.guess-form button,
+.btn,
+.actions button {
+  height: 48px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.guess-form button:disabled,
+.actions button:disabled,
+.btn:disabled,
+.menu-list button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.error {
+  min-height: 1.4em;
+  margin: 8px 0 10px;
+  color: var(--danger);
+  font-size: 0.92rem;
+}
+
+.error.spacer {
+  visibility: hidden;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.center {
+  text-align: center;
+}
+
+.guess-row {
+  position: relative;
+  height: 42px;
+  border-radius: 6px;
+  background: var(--track);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.guess-row.current {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+html.dark .guess-row.current {
+  outline-color: #fff;
+}
+
+.latest-guess {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.guess-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  transition: width 0.45s ease;
+}
+
+.guess-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 14px;
+  font-weight: 800;
+  text-transform: lowercase;
+  color: #142016;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+html.dark .guess-content {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+html.dark .guess-form input::placeholder {
+  color: #9a9a9a;
+}
+
+html.dark .hint-tag {
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+}
+
+.guess-word {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guess-rank {
+  font-variant-numeric: tabular-nums;
+}
+
+.hint-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.guess-flash {
+  animation: pulse 0.5s ease;
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(0.98);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.actions button,
+.btn {
+  background: var(--track);
+  color: var(--fg);
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn.danger {
+  background: #c62828;
+  color: white;
+}
+
+.banner {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.banner code {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 20;
+}
+
+.modal {
+  width: min(440px, 100%);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 20px 20px 24px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-head h2 {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.prose p,
+.prose li {
+  color: var(--muted);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+
+.prose ul {
+  margin: 12px 0 16px;
+}
+
+.prose li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.swatch.green {
+  background: hsl(142 78% 42%);
+}
+
+.swatch.yellow {
+  background: hsl(38 82% 48%);
+}
+
+.swatch.red {
+  background: hsl(4 76% 48%);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions .btn {
+  flex: 1;
+  height: 44px;
+}
+
+.share-preview {
+  letter-spacing: 2px;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.menu-list {
+  display: grid;
+  gap: 8px;
+}
+
+.menu-list button {
+  height: 44px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.menu-list button:hover:not(:disabled) {
+  border-color: var(--fg);
 }

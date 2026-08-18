@@ -1,0 +1,42 @@
+{
+  "builtAt": "2026-08-18T06:38:26.586Z",
+  "sources": [
+    {
+      "name": "GloVe",
+      "model": "glove.6B.300d",
+      "url": "https://nlp.stanford.edu/projects/glove/",
+      "note": "frequency-sorted 6B tokens; alphabetic English-like head"
+    },
+    {
+      "name": "OpenSubtitles FrequencyWords",
+      "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/en/en_50k.txt",
+      "year": 2018,
+      "file": "en_50k.txt",
+      "usedFor": "secret noun ranking"
+    },
+    {
+      "name": "Princeton WordNet",
+      "version": "3.1",
+      "package": "wordnet-db",
+      "usedFor": "secret noun filter"
+    }
+  ],
+  "rules": {
+    "guessMinLen": 3,
+    "guessMaxLen": 15,
+    "guessTarget": 70000,
+    "guesses": "first 70k alphabetic GloVe 6B tokens (skip no-vowel / triple-letter junk)",
+    "secrets": "everyday concrete nouns; skip verb/adjective-dominant and proper names",
+    "secretMinFrequencyRank": 150,
+    "secretMaxFrequencyRank": 7000,
+    "secretCandidates": 1595
+  },
+  "counts": {
+    "wordnetNouns": 55287,
+    "wordnetVerbs": 8617,
+    "frequencyEntries": 46933,
+    "gloveHead": 70000,
+    "vocabulary": 70000,
+    "secrets": 400
+  }
+}

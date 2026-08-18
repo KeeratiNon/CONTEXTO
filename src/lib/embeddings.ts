@@ -1,0 +1,122 @@
+import fs from "node:fs";
+import OpenAI from "openai";
+import { GLOVE_DIMENSIONS, GLOVE_MODEL, loadGloveVectors } from "./glove";
+import { MODELS_DIR } from "./paths";
+import type { EmbeddingProvider } from "./types";
+
+export type EmbeddingModel = {
+  provider: EmbeddingProvider;
+  model: string;
+  dimensions: number;
+  embed: (texts: string[]) => Promise<number[][]>;
+  hasWord?: (word: string) => boolean;
+};
+
+const LOCAL_MODEL = "Xenova/all-MiniLM-L6-v2";
+const OPENAI_MODEL = "text-embedding-3-small";
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
+async function createLocalEmbedder(): Promise<EmbeddingModel> {
+  const transformers = await import("@huggingface/transformers");
+  transformers.env.cacheDir = MODELS_DIR;
+  fs.mkdirSync(MODELS_DIR, { recursive: true });
+
+  console.log(`Loading local model ${LOCAL_MODEL}...`);
+  const extractor = await transformers.pipeline(
+    "feature-extraction",
+    LOCAL_MODEL,
+    { dtype: "fp32" },
+  );
+
+  return {
+    provider: "local",
+    model: LOCAL_MODEL,
+    dimensions: 384,
+    embed: async (texts: string[]) => {
+      const vectors: number[][] = [];
+      const batches = chunk(texts, 32);
+      for (const [index, batch] of batches.entries()) {
+        const output = await extractor(batch, {
+          pooling: "mean",
+          normalize: true,
+        });
+        const list = output.tolist() as number[][];
+        vectors.push(...list);
+        if ((index + 1) % 5 === 0 || index === batches.length - 1) {
+          console.log(`  local embed ${Math.min(vectors.length, texts.length)}/${texts.length}`);
+        }
+      }
+      return vectors;
+    },
+  };
+}
+
+function createOpenAIEmbedder(): EmbeddingModel {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai");
+  }
+
+  const client = new OpenAI({ apiKey });
+
+  return {
+    provider: "openai",
+    model: OPENAI_MODEL,
+    dimensions: 1536,
+    embed: async (texts: string[]) => {
+      const vectors: number[][] = [];
+      for (const batch of chunk(texts, 512)) {
+        const response = await client.embeddings.create({
+          model: OPENAI_MODEL,
+          input: batch,
+        });
+        const ordered = [...response.data].sort((a, b) => a.index - b.index);
+        vectors.push(...ordered.map((item) => item.embedding));
+      }
+      return vectors;
+    },
+  };
+}
+
+async function createGloveEmbedder(vocab: string[]): Promise<EmbeddingModel> {
+  console.log(`Loading ${GLOVE_MODEL} for ${vocab.length} words...`);
+  const table = await loadGloveVectors(new Set(vocab));
+  console.log(`GloVe coverage: ${table.size}/${vocab.length} words`);
+
+  return {
+    provider: "glove",
+    model: GLOVE_MODEL,
+    dimensions: GLOVE_DIMENSIONS,
+    hasWord: (word) => table.has(word),
+    embed: async (texts: string[]) =>
+      texts.map((word) => {
+        const vector = table.get(word);
+        if (!vector) {
+          throw new Error(`No GloVe vector for "${word}"`);
+        }
+        return vector;
+      }),
+  };
+}
+
+export function providerFromEnv(): EmbeddingProvider {
+  const raw = process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
+  if (raw === "openai" || raw === "local" || raw === "glove") return raw;
+  return "glove";
+}
+
+export async function createEmbedder(
+  vocab: string[] = [],
+  provider: EmbeddingProvider = providerFromEnv(),
+): Promise<EmbeddingModel> {
+  if (provider === "openai") return createOpenAIEmbedder();
+  if (provider === "local") return createLocalEmbedder();
+  return createGloveEmbedder(vocab);
+}
