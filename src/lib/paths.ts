@@ -18,6 +18,7 @@ export function pathsFor(lang: GameLang) {
     secretsPath: path.join(root, "secrets.txt"),
     frequencyPath: path.join(root, "raw", lang === "th" ? "th_50k.txt" : "en_50k.txt"),
     thaiGlovePath: path.join(root, "raw", "th.glove.300d.top30k.txt"),
+    thaiGloveGzipPath: path.join(root, "th.glove.300d.top30k.txt.gz"),
   };
 }
 

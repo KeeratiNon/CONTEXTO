@@ -1,44 +1,56 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { pipeline } from "node:stream/promises";
+import zlib from "node:zlib";
 import { l2normalize } from "./download";
 import { isThaiGuessToken } from "./lang";
 import { pathsFor } from "./paths";
 
 export const THAI_GLOVE_MODEL = "th.glove.300d.top30k";
 export const THAI_GLOVE_DIMENSIONS = 300;
-export const DEFAULT_THAI_GLOVE_FILE = "/Users/non/Downloads/th.glove.300d.top30k.txt";
 
 function candidateFiles() {
+  const paths = pathsFor("th");
   return [
     process.env.THAI_GLOVE_FILE,
-    pathsFor("th").thaiGlovePath,
-    DEFAULT_THAI_GLOVE_FILE,
+    paths.thaiGlovePath,
+    paths.thaiGloveGzipPath,
+    path.join(os.homedir(), "Downloads", "th.glove.300d.top30k.txt"),
   ].filter((file): file is string => Boolean(file));
+}
+
+function isUsableFile(file: string) {
+  return fs.existsSync(file) && fs.statSync(file).size > 1_000_000;
 }
 
 export function resolveThaiGloveFile() {
   for (const file of candidateFiles()) {
-    if (fs.existsSync(file) && fs.statSync(file).size > 1_000_000) return file;
+    if (isUsableFile(file)) return file;
   }
   throw new Error(
-    `Missing Thai GloVe file. Place th.glove.300d.top30k.txt at ${DEFAULT_THAI_GLOVE_FILE} or set THAI_GLOVE_FILE.`,
+    "Missing Thai GloVe file. Commit data/th/th.glove.300d.top30k.txt.gz or set THAI_GLOVE_FILE.",
   );
 }
 
-export function ensureThaiGloveCache() {
-  const source = resolveThaiGloveFile();
+export async function ensureThaiGloveCache() {
   const dest = pathsFor("th").thaiGlovePath;
+  if (isUsableFile(dest)) return dest;
+
+  const source = resolveThaiGloveFile();
   if (path.resolve(source) === path.resolve(dest)) return dest;
+
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  const shouldCopy =
-    !fs.existsSync(dest) ||
-    fs.statSync(dest).size !== fs.statSync(source).size ||
-    fs.statSync(source).mtimeMs > fs.statSync(dest).mtimeMs;
-  if (shouldCopy) {
+  const tmp = `${dest}.part`;
+  if (source.endsWith(".gz")) {
+    console.log(`Extracting ${path.basename(source)} → ${dest}`);
+    await pipeline(fs.createReadStream(source), zlib.createGunzip(), fs.createWriteStream(tmp));
+  } else {
     console.log(`Copying ${path.basename(source)} → ${dest}`);
-    fs.copyFileSync(source, dest);
+    fs.copyFileSync(source, tmp);
   }
+  fs.renameSync(tmp, dest);
   return dest;
 }
 
@@ -81,7 +93,7 @@ async function* iterateThaiGloveLines(file: string) {
 }
 
 export async function listThaiGloveGuessableWords(): Promise<string[]> {
-  const file = ensureThaiGloveCache();
+  const file = await ensureThaiGloveCache();
   const words: string[] = [];
   const seen = new Set<string>();
   for await (const line of iterateThaiGloveLines(file)) {
@@ -94,7 +106,7 @@ export async function listThaiGloveGuessableWords(): Promise<string[]> {
 }
 
 export async function loadThaiGloveVectors(wanted: Set<string>): Promise<Map<string, number[]>> {
-  const file = ensureThaiGloveCache();
+  const file = await ensureThaiGloveCache();
   const vectors = new Map<string, number[]>();
   for await (const line of iterateThaiGloveLines(file)) {
     const parsed = parseLine(line);
