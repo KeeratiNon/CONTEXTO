@@ -35,10 +35,16 @@ yarn-error.log*
 !.env.example
 
 # vector db + caches
-/data/ranks
-/data/puzzles
-/data/models
-/data/raw
+/data/en/ranks
+/data/en/puzzles
+/data/en/models
+/data/en/raw
+/data/th/lancedb
+/data/th/ranks
+/data/th/puzzles
+/data/th/models
+/data/th/raw
+/data/th/meta.json
 
 # vercel
 .vercel

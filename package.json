@@ -8,10 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "build-vocab": "tsx scripts/build-vocab.ts",
+    "build-vocab:th": "tsx scripts/build-vocab-th.ts",
     "seed": "tsx scripts/seed.ts",
     "seed:glove": "EMBEDDING_PROVIDER=glove tsx scripts/seed.ts",
     "seed:local": "EMBEDDING_PROVIDER=local tsx scripts/seed.ts",
-    "prepare-data": "npm run build-vocab && npm run seed"
+    "seed:th": "LANGUAGE=th EMBEDDING_PROVIDER=glove tsx scripts/seed.ts",
+    "prepare-data": "npm run build-vocab && npm run seed",
+    "prepare-data:th": "npm run build-vocab:th && npm run seed:th"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

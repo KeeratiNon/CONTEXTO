@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import OpenAI from "openai";
 import { GLOVE_DIMENSIONS, GLOVE_MODEL, loadGloveVectors } from "./glove";
-import { MODELS_DIR } from "./paths";
+import { FASTTEXT_DIMENSIONS, FASTTEXT_MODEL, loadThaiFasttextVectors } from "./fasttext";
+import { THAI_GLOVE_DIMENSIONS, THAI_GLOVE_MODEL, loadThaiGloveVectors } from "./th-glove";
+import { pathsFor } from "./paths";
 import type { EmbeddingProvider } from "./types";
+import { parseLang, type GameLang } from "./lang";
 
 export type EmbeddingModel = {
   provider: EmbeddingProvider;
@@ -12,7 +15,8 @@ export type EmbeddingModel = {
   hasWord?: (word: string) => boolean;
 };
 
-const LOCAL_MODEL = "Xenova/all-MiniLM-L6-v2";
+const LOCAL_MODEL_EN = "Xenova/all-MiniLM-L6-v2";
+const LOCAL_MODEL_TH = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 const OPENAI_MODEL = "text-embedding-3-small";
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -23,25 +27,23 @@ function chunk<T>(items: T[], size: number): T[][] {
   return batches;
 }
 
-async function createLocalEmbedder(): Promise<EmbeddingModel> {
+async function createLocalEmbedder(lang: GameLang): Promise<EmbeddingModel> {
   const transformers = await import("@huggingface/transformers");
-  transformers.env.cacheDir = MODELS_DIR;
-  fs.mkdirSync(MODELS_DIR, { recursive: true });
+  const model = lang === "th" ? LOCAL_MODEL_TH : LOCAL_MODEL_EN;
+  const cacheDir = pathsFor(lang).modelsDir;
+  transformers.env.cacheDir = cacheDir;
+  fs.mkdirSync(cacheDir, { recursive: true });
 
-  console.log(`Loading local model ${LOCAL_MODEL}...`);
-  const extractor = await transformers.pipeline(
-    "feature-extraction",
-    LOCAL_MODEL,
-    { dtype: "fp32" },
-  );
+  console.log(`Loading local model ${model}...`);
+  const extractor = await transformers.pipeline("feature-extraction", model, { dtype: "fp32" });
 
   return {
     provider: "local",
-    model: LOCAL_MODEL,
+    model,
     dimensions: 384,
     embed: async (texts: string[]) => {
       const vectors: number[][] = [];
-      const batches = chunk(texts, 32);
+      const batches = chunk(texts, lang === "th" ? 64 : 32);
       for (const [index, batch] of batches.entries()) {
         const output = await extractor(batch, {
           pooling: "mean",
@@ -106,17 +108,62 @@ async function createGloveEmbedder(vocab: string[]): Promise<EmbeddingModel> {
   };
 }
 
-export function providerFromEnv(): EmbeddingProvider {
+async function createFasttextEmbedder(vocab: string[]): Promise<EmbeddingModel> {
+  console.log(`Loading ${FASTTEXT_MODEL} for ${vocab.length} words...`);
+  const table = await loadThaiFasttextVectors(new Set(vocab));
+  console.log(`fastText coverage: ${table.size}/${vocab.length} words`);
+
+  return {
+    provider: "fasttext",
+    model: FASTTEXT_MODEL,
+    dimensions: FASTTEXT_DIMENSIONS,
+    hasWord: (word) => table.has(word),
+    embed: async (texts: string[]) =>
+      texts.map((word) => {
+        const vector = table.get(word);
+        if (!vector) {
+          throw new Error(`No fastText vector for "${word}"`);
+        }
+        return vector;
+      }),
+  };
+}
+
+async function createThaiGloveEmbedder(vocab: string[]): Promise<EmbeddingModel> {
+  console.log(`Loading ${THAI_GLOVE_MODEL} for ${vocab.length} words...`);
+  const table = await loadThaiGloveVectors(new Set(vocab));
+  console.log(`Thai GloVe coverage: ${table.size}/${vocab.length} words`);
+
+  return {
+    provider: "glove",
+    model: THAI_GLOVE_MODEL,
+    dimensions: THAI_GLOVE_DIMENSIONS,
+    hasWord: (word) => table.has(word),
+    embed: async (texts: string[]) =>
+      texts.map((word) => {
+        const vector = table.get(word);
+        if (!vector) {
+          throw new Error(`No Thai GloVe vector for "${word}"`);
+        }
+        return vector;
+      }),
+  };
+}
+
+export function providerFromEnv(lang: GameLang = parseLang(process.env.LANGUAGE)): EmbeddingProvider {
   const raw = process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
-  if (raw === "openai" || raw === "local" || raw === "glove") return raw;
+  if (raw === "openai" || raw === "local" || raw === "glove" || raw === "fasttext") return raw;
   return "glove";
 }
 
 export async function createEmbedder(
   vocab: string[] = [],
   provider: EmbeddingProvider = providerFromEnv(),
+  lang: GameLang = parseLang(process.env.LANGUAGE),
 ): Promise<EmbeddingModel> {
   if (provider === "openai") return createOpenAIEmbedder();
-  if (provider === "local") return createLocalEmbedder();
+  if (provider === "local") return createLocalEmbedder(lang);
+  if (provider === "fasttext") return createFasttextEmbedder(vocab);
+  if (lang === "th") return createThaiGloveEmbedder(vocab);
   return createGloveEmbedder(vocab);
 }

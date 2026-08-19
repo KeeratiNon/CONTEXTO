@@ -1,7 +1,8 @@
 "use client";
 
 import { rankEmoji, winCopy } from "@/lib/heat";
-import type { Guess, PuzzleMeta } from "@/lib/types";
+import { COPY } from "@/lib/copy";
+import type { GameLang, Guess, PuzzleMeta } from "@/lib/types";
 import type { ReactNode } from "react";
 
 function Overlay({
@@ -34,7 +35,40 @@ function Overlay({
   );
 }
 
-export function HowToPlay({ onClose }: { onClose: () => void }) {
+export function HowToPlay({ onClose, lang = "en" }: { onClose: () => void; lang?: GameLang }) {
+  if (lang === "th") {
+    return (
+      <Overlay title="วิธีเล่น" onClose={onClose}>
+        <div className="prose">
+          <p>หาคำลับ ทายได้ไม่จำกัดครั้ง</p>
+          <p>
+            ทายได้ทุกคำไทยในคลัง — คำลับมักเป็นคำนามในชีวิตประจำวัน เช่น ของ สัตว์ อาหาร สถานที่
+          </p>
+          <p>
+            ระบบจัดอันดับคำตามความใกล้ของความหมายกับคำลับ จากเวกเตอร์ fastText ภาษาไทย
+          </p>
+          <p>
+            หลังทายจะเห็นเลขอันดับ คำลับคือหมายเลข <strong>1</strong>
+          </p>
+          <ul>
+            <li>
+              <span className="swatch green" /> เขียว: อันดับ 1–300 ใกล้มาก
+            </li>
+            <li>
+              <span className="swatch yellow" /> ส้ม: 301–1500 อุ่นขึ้น
+            </li>
+            <li>
+              <span className="swatch red" /> แดง: 1501+ ไกล
+            </li>
+          </ul>
+          <p>
+            ใบ้ได้สูงสุด <strong>3 ครั้ง</strong> แต่ละครั้งใกล้ขึ้นประมาณครึ่งหนึ่งของอันดับดีสุด
+            ถ้าอยู่ที่อันดับ 2 ใบ้จะเฉลยคำลับ ใบ้นับเป็นครั้งที่ทาย
+          </p>
+        </div>
+      </Overlay>
+    );
+  }
   return (
     <Overlay title="How to play" onClose={onClose}>
       <div className="prose">
@@ -87,9 +121,13 @@ export function WinModal({
   onClose: () => void;
   onUnlimited: () => void;
 }) {
+  const lang = puzzle.lang ?? "en";
+  const t = COPY[lang];
   const label = puzzle.gameNumber
     ? `Contexto #${puzzle.gameNumber}`
-    : "unlimited Contexto";
+    : lang === "th"
+      ? "Contexto ไม่จำกัด"
+      : "unlimited Contexto";
 
   async function share() {
     const squares = guesses.map((guess) => rankEmoji(guess.rank));
@@ -109,7 +147,7 @@ export function WinModal({
     <Overlay title={winCopy(guesses.length)} onClose={onClose}>
       <div className="prose">
         <p>
-          You found the word in <strong>{guesses.length}</strong> guesses.
+          {t.foundIn} <strong>{guesses.length}</strong> {t.guesses.toLowerCase()}.
         </p>
         <div className="share-preview">
           {guesses.slice(-24).map((guess) => (
@@ -118,10 +156,10 @@ export function WinModal({
         </div>
         <div className="modal-actions">
           <button className="btn primary" onClick={share}>
-            Copy results
+            {t.copy}
           </button>
           <button className="btn" onClick={onUnlimited}>
-            Play unlimited
+            {t.playUnlimited}
           </button>
         </div>
       </div>
@@ -133,23 +171,26 @@ export function GaveUpModal({
   secret,
   onClose,
   onUnlimited,
+  lang = "en",
 }: {
   secret: string;
   onClose: () => void;
   onUnlimited: () => void;
+  lang?: GameLang;
 }) {
+  const t = COPY[lang];
   return (
-    <Overlay title="The secret word" onClose={onClose}>
+    <Overlay title={lang === "th" ? "คำลับ" : "The secret word"} onClose={onClose}>
       <div className="prose">
         <p>
-          Today&apos;s word was <strong>{secret}</strong>.
+          {lang === "th" ? "คำวันนี้คือ" : "Today's word was"} <strong>{secret}</strong>.
         </p>
         <div className="modal-actions">
           <button className="btn primary" onClick={onUnlimited}>
-            Play unlimited
+            {t.playUnlimited}
           </button>
           <button className="btn" onClick={onClose}>
-            Close
+            {t.close}
           </button>
         </div>
       </div>
@@ -160,20 +201,27 @@ export function GaveUpModal({
 export function ConfirmGiveUp({
   onConfirm,
   onClose,
+  lang = "en",
 }: {
   onConfirm: () => void;
   onClose: () => void;
+  lang?: GameLang;
 }) {
+  const t = COPY[lang];
   return (
-    <Overlay title="Give up?" onClose={onClose}>
+    <Overlay title={lang === "th" ? "ยอมแพ้?" : "Give up?"} onClose={onClose}>
       <div className="prose">
-        <p>This will reveal the secret word and end the game.</p>
+        <p>
+          {lang === "th"
+            ? "จะเฉลยคำลับและจบเกมนี้"
+            : "This will reveal the secret word and end the game."}
+        </p>
         <div className="modal-actions">
           <button className="btn danger" onClick={onConfirm}>
-            Reveal word
+            {t.reveal}
           </button>
           <button className="btn" onClick={onClose}>
-            Keep playing
+            {t.keepPlaying}
           </button>
         </div>
       </div>
@@ -191,6 +239,7 @@ export function Menu({
   disabled,
   hintDisabled,
   hintsLeft,
+  lang = "en",
 }: {
   onHowTo: () => void;
   onHint: () => void;
@@ -201,18 +250,20 @@ export function Menu({
   disabled: boolean;
   hintDisabled: boolean;
   hintsLeft: number;
+  lang?: GameLang;
 }) {
+  const t = COPY[lang];
   return (
-    <Overlay title="Menu" onClose={onClose}>
+    <Overlay title={t.menu} onClose={onClose}>
       <div className="menu-list">
-        <button onClick={onHowTo}>How to play</button>
+        <button onClick={onHowTo}>{t.howTo}</button>
         <button onClick={onHint} disabled={hintDisabled}>
-          Hint · {hintsLeft} left
+          {t.hint} · {hintsLeft}
         </button>
         <button onClick={onGiveUp} disabled={disabled}>
-          Give up
+          {t.giveUp}
         </button>
-        <button onClick={onTheme}>{dark ? "Light mode" : "Dark mode"}</button>
+        <button onClick={onTheme}>{dark ? t.light : t.dark}</button>
       </div>
     </Overlay>
   );

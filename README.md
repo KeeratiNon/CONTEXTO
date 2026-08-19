@@ -21,7 +21,7 @@
 สร้างครั้งเดียวจากแหล่งสาธารณะ แล้ว embed ทั้งชุด — ตอนเล่นไม่เรียก WordNet/API
 
 ```bash
-npm run build-vocab   # หัวคลัง GloVe ~70k + คัดคำลับจาก WordNet → data/vocabulary.txt
+npm run build-vocab   # หัวคลัง GloVe ~70k + คัดคำลับจาก WordNet → data/en/vocabulary.txt
 npm run seed          # ใส่เวกเตอร์ทั้งคลังลง LanceDB
 ```
 
@@ -38,7 +38,7 @@ npm run seed          # ใส่เวกเตอร์ทั้งคลั�
 - **ทายได้:** ~70,000 คำแรกใน GloVe ที่เป็นตัวอักษรล้วน (รวมรูปผัน เช่น `cats`, `running`) — rank สูงสุดจึงอยู่ในหลักหมื่น ใกล้เกมต้นฉบับ
 - **คำลับ:** เฉพาะ noun ในชีวิตประจำวัน (ของ, คน, สัตว์, สถานที่, อาหาร) ไม่ใช้คำกริยาที่บังเอิญเป็น noun ในพจนานุกรม เช่น `see`
 
-ผลเขียนลง `data/vocabulary.txt`, `data/secrets.txt`, `data/vocab-meta.json`
+ผลเขียนลง `data/en/vocabulary.txt`, `data/en/secrets.txt`, `data/en/vocab-meta.json`
 
 ## เล่น
 

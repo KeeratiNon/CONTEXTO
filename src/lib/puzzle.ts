@@ -1,66 +1,65 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { PUZZLES_DIR } from "./paths";
-import { GameError, type GameMode, type PuzzleMeta, type StoredPuzzle } from "./types";
+import { pathsFor } from "./paths";
+import { GameError, type GameLang, type GameMode, type PuzzleMeta, type StoredPuzzle } from "./types";
+import { dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
 import { gameNumberForDate } from "./date";
 import { loadSecrets, pickDailySecret, pickUnlimitedSecret } from "./words";
 import { getCachedRanks, requireSeedMeta } from "./vectordb";
 
-function puzzlePath(id: string): string {
-  return `${PUZZLES_DIR}/${id.replaceAll("/", "_")}.json`;
+function puzzlePath(id: string, lang: GameLang): string {
+  return `${pathsFor(lang).puzzlesDir}/${id.replaceAll("/", "_")}.json`;
 }
 
-function readPuzzle(id: string): StoredPuzzle | null {
-  const file = puzzlePath(id);
+function readPuzzle(id: string, lang: GameLang): StoredPuzzle | null {
+  const file = puzzlePath(id, lang);
   if (!fs.existsSync(file)) return null;
   return JSON.parse(fs.readFileSync(file, "utf8")) as StoredPuzzle;
 }
 
-function writePuzzle(puzzle: StoredPuzzle) {
-  fs.mkdirSync(PUZZLES_DIR, { recursive: true });
-  fs.writeFileSync(puzzlePath(puzzle.id), JSON.stringify(puzzle, null, 2));
+function writePuzzle(puzzle: StoredPuzzle, lang: GameLang) {
+  fs.mkdirSync(pathsFor(lang).puzzlesDir, { recursive: true });
+  fs.writeFileSync(puzzlePath(puzzle.id, lang), JSON.stringify(puzzle, null, 2));
 }
 
-export function getOrCreateDailyPuzzle(date: string): StoredPuzzle {
-  const id = `daily-${date}`;
-  const existing = readPuzzle(id);
+export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): StoredPuzzle {
+  const id = dailyPuzzleId(date, lang);
+  const existing = readPuzzle(id, lang);
   if (existing) return existing;
 
-  const secret = pickDailySecret(date, loadSecrets());
+  const secret = pickDailySecret(date, loadSecrets(lang), lang);
   const puzzle: StoredPuzzle = {
     id,
     mode: "daily",
+    lang,
     secret,
     date,
     createdAt: new Date().toISOString(),
   };
-  writePuzzle(puzzle);
+  writePuzzle(puzzle, lang);
   return puzzle;
 }
 
-export function createUnlimitedPuzzle(): StoredPuzzle {
-  const id = `ul-${crypto.randomUUID()}`;
-  const secret = pickUnlimitedSecret(loadSecrets());
+export function createUnlimitedPuzzle(lang: GameLang = "en"): StoredPuzzle {
+  const id = lang === "th" ? `ul-th-${crypto.randomUUID()}` : `ul-${crypto.randomUUID()}`;
+  const secret = pickUnlimitedSecret(loadSecrets(lang));
   const puzzle: StoredPuzzle = {
     id,
     mode: "unlimited",
+    lang,
     secret,
     createdAt: new Date().toISOString(),
   };
-  writePuzzle(puzzle);
+  writePuzzle(puzzle, lang);
   return puzzle;
 }
 
 export function loadPuzzle(puzzleId: string): StoredPuzzle {
-  if (puzzleId.startsWith("daily-")) {
-    const date = puzzleId.slice("daily-".length);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      throw new GameError("invalid_puzzle", "Invalid daily puzzle id.");
-    }
-    return getOrCreateDailyPuzzle(date);
-  }
+  const daily = parseDailyPuzzleId(puzzleId);
+  if (daily) return getOrCreateDailyPuzzle(daily.date, daily.lang);
 
-  const puzzle = readPuzzle(puzzleId);
+  const lang = langFromPuzzleId(puzzleId);
+  const puzzle = readPuzzle(puzzleId, lang);
   if (!puzzle) {
     throw new GameError("invalid_puzzle", "Puzzle not found.", 404);
   }
@@ -68,9 +67,11 @@ export function loadPuzzle(puzzleId: string): StoredPuzzle {
 }
 
 export function toPuzzleMeta(puzzle: StoredPuzzle, vocabSize: number): PuzzleMeta {
+  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
   return {
     id: puzzle.id,
     mode: puzzle.mode,
+    lang,
     date: puzzle.date,
     gameNumber: puzzle.date ? gameNumberForDate(puzzle.date) : undefined,
     vocabSize,
@@ -80,12 +81,13 @@ export function toPuzzleMeta(puzzle: StoredPuzzle, vocabSize: number): PuzzleMet
 export async function openPuzzle(
   mode: GameMode,
   date?: string,
+  lang: GameLang = "en",
 ): Promise<{ meta: PuzzleMeta; puzzle: StoredPuzzle }> {
-  const seed = requireSeedMeta();
+  const seed = requireSeedMeta(lang);
   const puzzle =
     mode === "unlimited"
-      ? createUnlimitedPuzzle()
-      : getOrCreateDailyPuzzle(date ?? new Date().toISOString().slice(0, 10));
+      ? createUnlimitedPuzzle(lang)
+      : getOrCreateDailyPuzzle(date ?? new Date().toISOString().slice(0, 10), lang);
 
   await getCachedRanks(puzzle.id, puzzle.secret);
   return { meta: toPuzzleMeta(puzzle, seed.vocabSize), puzzle };

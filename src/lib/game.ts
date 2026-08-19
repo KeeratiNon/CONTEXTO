@@ -1,3 +1,5 @@
+import { COPY } from "./copy";
+import { langFromPuzzleId } from "./lang";
 import { GameError, MAX_HINTS } from "./types";
 import { normalizeWord } from "./words";
 import { getPuzzleRanks, nearbyWords } from "./puzzle";
@@ -5,15 +7,16 @@ import { getPuzzleRanks, nearbyWords } from "./puzzle";
 const FIRST_HINT_RANK = 80;
 
 export async function submitGuess(puzzleId: string, rawWord: string) {
-  const word = normalizeWord(rawWord);
+  const lang = langFromPuzzleId(puzzleId);
+  const word = normalizeWord(rawWord, lang);
   if (word.length < 2) {
-    throw new GameError("invalid_word", "Type a word.");
+    throw new GameError("invalid_word", lang === "th" ? "พิมพ์คำ" : "Type a word.");
   }
 
   const { puzzle, ranks } = await getPuzzleRanks(puzzleId);
   const rank = ranks.get(word);
   if (rank === undefined) {
-    throw new GameError("unknown_word", "I don't know this word.");
+    throw new GameError("unknown_word", COPY[lang].unknownWord);
   }
 
   const correct = rank === 1;
@@ -31,12 +34,13 @@ export async function submitHint(
   guessed: string[],
   hintsUsed: number,
 ) {
+  const lang = langFromPuzzleId(puzzleId);
   if (hintsUsed >= MAX_HINTS) {
     throw new GameError("hint_limit", `You can use at most ${MAX_HINTS} hints.`);
   }
 
   const { puzzle, ranks } = await getPuzzleRanks(puzzleId);
-  const guessedSet = new Set(guessed.map(normalizeWord).filter(Boolean));
+  const guessedSet = new Set(guessed.map((item) => normalizeWord(item, lang)).filter(Boolean));
 
   let best = Infinity;
   for (const word of guessedSet) {

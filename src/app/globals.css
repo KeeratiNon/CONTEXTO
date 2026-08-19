@@ -49,9 +49,39 @@ input {
 
 .topbar {
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  grid-template-columns: 44px 1fr auto;
   align-items: center;
   gap: 8px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lang-switch {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--track);
+  border-radius: 999px;
+}
+
+.lang-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 6px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.lang-switch button.active {
+  background: var(--card);
+  color: var(--fg);
 }
 
 .brand {
@@ -226,6 +256,18 @@ html.dark .guess-row.current {
   text-transform: lowercase;
   color: #142016;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+html.lang-th .guess-content {
+  text-transform: none;
+  font-family: var(--font-thai), var(--font-sans), sans-serif;
+}
+
+html.lang-th,
+html.lang-th body,
+html.lang-th button,
+html.lang-th input {
+  font-family: var(--font-thai), var(--font-sans), sans-serif;
 }
 
 html.dark .guess-content {

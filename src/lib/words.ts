@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { SECRETS_PATH, VOCAB_PATH } from "./paths";
+import { pathsFor } from "./paths";
+import { isThaiGuessToken, type GameLang } from "./lang";
 
 const SIMPLE_ING_NOUNS = new Set([
   "morning",
@@ -16,7 +17,10 @@ const SIMPLE_ING_NOUNS = new Set([
   "clothing",
 ]);
 
-export function normalizeWord(raw: string): string {
+export function normalizeWord(raw: string, lang: GameLang = "en"): string {
+  if (lang === "th") {
+    return raw.trim().replace(/\s+/g, "").normalize("NFC").replace(/[^\u0E00-\u0E7F]/g, "");
+  }
   return raw
     .trim()
     .toLowerCase()
@@ -25,7 +29,8 @@ export function normalizeWord(raw: string): string {
     .replace(/[^a-z]/g, "");
 }
 
-export function isValidWord(word: string): boolean {
+export function isValidWord(word: string, lang: GameLang = "en"): boolean {
+  if (lang === "th") return isThaiGuessToken(word);
   return /^[a-z]{2,20}$/.test(word);
 }
 
@@ -38,25 +43,27 @@ export function isSimpleWord(word: string): boolean {
   return true;
 }
 
-export function readWordList(filePath: string): string[] {
+export function readWordList(filePath: string, lang: GameLang = "en"): string[] {
   if (!fs.existsSync(filePath)) return [];
   const unique = new Set<string>();
   for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
-    const word = normalizeWord(line);
-    if (isValidWord(word) && word.length >= 3) unique.add(word);
+    const word = normalizeWord(line, lang);
+    if (isValidWord(word, lang) && (lang === "th" || word.length >= 3)) unique.add(word);
   }
   return [...unique];
 }
 
-export function loadVocabulary(): string[] {
-  const words = new Set(readWordList(VOCAB_PATH));
-  for (const word of readWordList(SECRETS_PATH)) words.add(word);
+export function loadVocabulary(lang: GameLang = "en"): string[] {
+  const paths = pathsFor(lang);
+  const words = new Set(readWordList(paths.vocabPath, lang));
+  for (const word of readWordList(paths.secretsPath, lang)) words.add(word);
   return [...words].sort();
 }
 
-export function loadSecrets(): string[] {
-  const vocab = new Set(loadVocabulary());
-  return readWordList(SECRETS_PATH).filter((word) => vocab.has(word));
+export function loadSecrets(lang: GameLang = "en"): string[] {
+  const paths = pathsFor(lang);
+  const vocab = new Set(loadVocabulary(lang));
+  return readWordList(paths.secretsPath, lang).filter((word) => vocab.has(word));
 }
 
 export function hashString(value: string): number {
@@ -68,16 +75,16 @@ export function hashString(value: string): number {
   return hash >>> 0;
 }
 
-export function pickDailySecret(date: string, secrets: string[]): string {
+export function pickDailySecret(date: string, secrets: string[], lang: GameLang = "en"): string {
   if (secrets.length === 0) {
-    throw new Error("No secret words available. Check data/secrets.txt");
+    throw new Error("No secret words available. Check data/<lang>/secrets.txt");
   }
-  return secrets[hashString(`contexto-daily:${date}`) % secrets.length];
+  return secrets[hashString(`contexto-daily:${lang}:${date}`) % secrets.length];
 }
 
 export function pickUnlimitedSecret(secrets: string[], avoid?: string): string {
   if (secrets.length === 0) {
-    throw new Error("No secret words available. Check data/secrets.txt");
+    throw new Error("No secret words available. Check data/<lang>/secrets.txt");
   }
   const pool = avoid ? secrets.filter((word) => word !== avoid) : secrets;
   const list = pool.length > 0 ? pool : secrets;

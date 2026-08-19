@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import * as lancedb from "@lancedb/lancedb";
-import { LANCEDB_DIR, META_PATH, RANKS_DIR } from "./paths";
+import { pathsFor } from "./paths";
+import { langFromPuzzleId, type GameLang } from "./lang";
 import type { RankCache, SeedMeta } from "./types";
 import { GameError } from "./types";
 
@@ -23,52 +24,46 @@ function toNumberArray(value: unknown): number[] | null {
 }
 
 const globalForDb = globalThis as unknown as {
-  __contextoDb?: Promise<lancedb.Connection>;
+  __contextoDb?: Partial<Record<GameLang, Promise<lancedb.Connection>>>;
 };
 
-export async function getDb(): Promise<lancedb.Connection> {
-  if (!globalForDb.__contextoDb) {
-    globalForDb.__contextoDb = lancedb.connect(LANCEDB_DIR);
+export async function getDb(lang: GameLang): Promise<lancedb.Connection> {
+  if (!globalForDb.__contextoDb) globalForDb.__contextoDb = {};
+  if (!globalForDb.__contextoDb[lang]) {
+    globalForDb.__contextoDb[lang] = lancedb.connect(pathsFor(lang).lancedbDir);
   }
-  return globalForDb.__contextoDb;
+  return globalForDb.__contextoDb[lang];
 }
 
-export function readSeedMeta(): SeedMeta | null {
-  if (!fs.existsSync(META_PATH)) return null;
-  return JSON.parse(fs.readFileSync(META_PATH, "utf8")) as SeedMeta;
+export function readSeedMeta(lang: GameLang): SeedMeta | null {
+  const file = pathsFor(lang).metaPath;
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, "utf8")) as SeedMeta;
 }
 
-export function requireSeedMeta(): SeedMeta {
-  const meta = readSeedMeta();
+export function requireSeedMeta(lang: GameLang): SeedMeta {
+  const meta = readSeedMeta(lang);
   if (!meta) {
     throw new GameError(
       "not_seeded",
-      "Vector database is empty. Run npm run seed first.",
+      lang === "th"
+        ? "ยังไม่มีคลังภาษาไทย รัน npm run prepare-data:th ก่อน"
+        : "Vector database is empty. Run npm run seed first.",
       503,
     );
   }
   return meta;
 }
 
-export async function getWordsTable() {
-  requireSeedMeta();
-  const db = await getDb();
+export async function getWordsTable(lang: GameLang) {
+  requireSeedMeta(lang);
+  const db = await getDb(lang);
   return db.openTable("words");
 }
 
-export async function getWordVector(word: string): Promise<number[] | null> {
-  const table = await getWordsTable();
-  const rows = (await table
-    .query()
-    .where(`word = '${word.replaceAll("'", "''")}'`)
-    .limit(1)
-    .toArray()) as WordRow[];
-  return toNumberArray(rows[0]?.vector);
-}
-
-export async function rankAllWords(secret: string): Promise<Map<string, number>> {
-  const meta = requireSeedMeta();
-  const table = await getWordsTable();
+export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<string, number>> {
+  const meta = requireSeedMeta(lang);
+  const table = await getWordsTable(lang);
   const count = Math.max(meta.vocabSize, await table.countRows());
   const rows = (await table
     .query()
@@ -100,7 +95,7 @@ export async function rankAllWords(secret: string): Promise<Map<string, number>>
     }
     return { word: row.word, score: dot };
   });
-  scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word));
+  scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word, lang === "th" ? "th" : "en"));
 
   const ranks = new Map<string, number>();
   ranks.set(secret, 1);
@@ -110,13 +105,15 @@ export async function rankAllWords(secret: string): Promise<Map<string, number>>
   return ranks;
 }
 
-function ranksPath(puzzleId: string): string {
-  return `${RANKS_DIR}/${puzzleId.replaceAll("/", "_")}.json`;
+function ranksPath(puzzleId: string, lang: GameLang): string {
+  return `${pathsFor(lang).ranksDir}/${puzzleId.replaceAll("/", "_")}.json`;
 }
 
 export async function getCachedRanks(puzzleId: string, secret: string): Promise<Map<string, number>> {
-  fs.mkdirSync(RANKS_DIR, { recursive: true });
-  const file = ranksPath(puzzleId);
+  const lang = langFromPuzzleId(puzzleId);
+  const dir = pathsFor(lang).ranksDir;
+  fs.mkdirSync(dir, { recursive: true });
+  const file = ranksPath(puzzleId, lang);
 
   if (fs.existsSync(file)) {
     const cached = JSON.parse(fs.readFileSync(file, "utf8")) as RankCache;
@@ -125,7 +122,7 @@ export async function getCachedRanks(puzzleId: string, secret: string): Promise<
     }
   }
 
-  const ranks = await rankAllWords(secret);
+  const ranks = await rankAllWords(secret, lang);
   const payload: RankCache = {
     puzzleId,
     secret,

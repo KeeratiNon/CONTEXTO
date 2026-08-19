@@ -1,6 +1,9 @@
+import type { GameLang } from "./lang";
+
 export const MAX_HINTS = 3;
 export type GameMode = "daily" | "unlimited";
-export type EmbeddingProvider = "glove" | "local" | "openai";
+export type EmbeddingProvider = "glove" | "fasttext" | "local" | "openai";
+export type { GameLang };
 
 export type Guess = {
   word: string;
@@ -11,6 +14,7 @@ export type Guess = {
 export type PuzzleMeta = {
   id: string;
   mode: GameMode;
+  lang: GameLang;
   date?: string;
   gameNumber?: number;
   vocabSize: number;
@@ -33,6 +37,7 @@ export type RankCache = {
 export type StoredPuzzle = {
   id: string;
   mode: GameMode;
+  lang?: GameLang;
   secret: string;
   date?: string;
   createdAt: string;

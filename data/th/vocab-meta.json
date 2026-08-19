@@ -1,0 +1,22 @@
+{
+  "lang": "th",
+  "builtAt": "2026-08-19T04:50:06.488Z",
+  "sources": [
+    {
+      "name": "th.glove.300d.top30k",
+      "file": "data/th/raw/th.glove.300d.top30k.txt",
+      "note": "Playable words = Thai tokens with GloVe vectors (same idea as English GloVe 6B)"
+    },
+    {
+      "name": "thai-contexto-70k-v4",
+      "file": "data/th/thai-contexto-70k.jsonl",
+      "note": "Used to pick everyday secret nouns that also exist in Thai GloVe"
+    }
+  ],
+  "counts": {
+    "vocabulary": 24994,
+    "secrets": 400,
+    "datasetPlayable": 8773,
+    "curatedPlayable": 800
+  }
+}
