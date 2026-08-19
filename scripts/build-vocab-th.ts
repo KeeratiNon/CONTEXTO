@@ -189,7 +189,7 @@ async function main() {
         sources: [
           {
             name: THAI_GLOVE_MODEL,
-            file: "data/th/raw/th.glove.300d.top30k.txt",
+            file: "data/th/raw/th.glove.300d.top70k.txt",
             note: "Playable words = Thai tokens with GloVe vectors (same idea as English GloVe 6B)",
           },
           {

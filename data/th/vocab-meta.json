@@ -1,10 +1,10 @@
 {
   "lang": "th",
-  "builtAt": "2026-08-19T05:04:45.780Z",
+  "builtAt": "2026-08-19T07:54:04.363Z",
   "sources": [
     {
-      "name": "th.glove.300d.top30k",
-      "file": "data/th/raw/th.glove.300d.top30k.txt",
+      "name": "th.glove.300d.top70k",
+      "file": "data/th/raw/th.glove.300d.top70k.txt",
       "note": "Playable words = Thai tokens with GloVe vectors (same idea as English GloVe 6B)"
     },
     {
@@ -14,9 +14,9 @@
     }
   ],
   "counts": {
-    "vocabulary": 24994,
+    "vocabulary": 49155,
     "secrets": 400,
-    "datasetPlayable": 8773,
-    "curatedPlayable": 800
+    "datasetPlayable": 11113,
+    "curatedPlayable": 871
   }
 }

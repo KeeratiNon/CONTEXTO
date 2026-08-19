@@ -8,7 +8,7 @@ import { l2normalize } from "./download";
 import { isThaiGuessToken } from "./lang";
 import { pathsFor } from "./paths";
 
-export const THAI_GLOVE_MODEL = "th.glove.300d.top30k";
+export const THAI_GLOVE_MODEL = "th.glove.300d.top70k";
 export const THAI_GLOVE_DIMENSIONS = 300;
 
 function candidateFiles() {
@@ -17,7 +17,7 @@ function candidateFiles() {
     process.env.THAI_GLOVE_FILE,
     paths.thaiGlovePath,
     paths.thaiGloveGzipPath,
-    path.join(os.homedir(), "Downloads", "th.glove.300d.top30k.txt"),
+    path.join(os.homedir(), "Downloads", "th.glove.300d.top70k.txt"),
   ].filter((file): file is string => Boolean(file));
 }
 
@@ -30,7 +30,7 @@ export function resolveThaiGloveFile() {
     if (isUsableFile(file)) return file;
   }
   throw new Error(
-    "Missing Thai GloVe file. Commit data/th/th.glove.300d.top30k.txt.gz or set THAI_GLOVE_FILE.",
+    "Missing Thai GloVe file. Commit data/th/th.glove.300d.top70k.txt.gz or set THAI_GLOVE_FILE.",
   );
 }
 
