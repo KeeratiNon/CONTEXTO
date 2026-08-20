@@ -14,7 +14,9 @@
     "seed:local": "EMBEDDING_PROVIDER=local tsx scripts/seed.ts",
     "seed:th": "LANGUAGE=th EMBEDDING_PROVIDER=glove tsx scripts/seed.ts",
     "prepare-data": "npm run build-vocab && npm run seed",
-    "prepare-data:th": "npm run build-vocab:th && npm run seed:th"
+    "prepare-data:th": "npm run build-vocab:th && npm run seed:th",
+    "plot-positions": "tsx scripts/plot-word-positions.ts",
+    "plot-positions:th": "LANGUAGE=th tsx scripts/plot-word-positions.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
