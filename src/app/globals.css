@@ -79,6 +79,12 @@ input {
   cursor: pointer;
 }
 
+.lang-switch button:disabled,
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .lang-switch button.active {
   background: var(--card);
   color: var(--fg);
@@ -214,6 +220,44 @@ input {
   letter-spacing: 0.01em;
 }
 
+.boot-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52vh;
+  text-align: center;
+  padding: 32px 12px;
+}
+
+.boot-orb {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--fg);
+  animation: boot-spin 0.85s linear infinite;
+}
+
+.boot-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.boot-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .guess-row {
   position: relative;
   height: 42px;
@@ -326,13 +370,50 @@ html.dark .hint-tag {
   margin: 0 0 12px;
 }
 
+.clue-rail {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 4px 0 8px;
+  background: var(--bg);
+}
+
+.clue-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.clue-n {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.clue-text {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
 .actions button,
 .btn {
   background: var(--track);
   color: var(--fg);
 }
 
-.btn.primary {
+.btn.primary,
+.actions button.play-again {
   background: var(--accent);
   color: var(--bg);
 }

@@ -22,9 +22,14 @@ type Copy = {
   keepPlaying: string;
   reveal: string;
   close: string;
-  copy: string;
   playUnlimited: string;
+  playAgain: string;
+  viewResults: string;
   foundIn: string;
+  hintLabel: string;
+  thinkingHint: string;
+  hintsNotReady: string;
+  retryHints: string;
 };
 
 export const COPY: Record<GameLang, Copy> = {
@@ -50,9 +55,14 @@ export const COPY: Record<GameLang, Copy> = {
     keepPlaying: "Keep playing",
     reveal: "Reveal word",
     close: "Close",
-    copy: "Copy results",
     playUnlimited: "Play unlimited",
+    playAgain: "Play again",
+    viewResults: "View results",
     foundIn: "You found the word in",
+    hintLabel: "Hint",
+    thinkingHint: "preparing hints...",
+    hintsNotReady: "Hints are still preparing...",
+    retryHints: "Try again",
   },
   th: {
     daily: "รายวัน",
@@ -76,8 +86,13 @@ export const COPY: Record<GameLang, Copy> = {
     keepPlaying: "เล่นต่อ",
     reveal: "เฉลย",
     close: "ปิด",
-    copy: "คัดลอกผล",
     playUnlimited: "เล่นไม่จำกัด",
+    playAgain: "เล่นใหม่",
+    viewResults: "ดูผล",
     foundIn: "คุณทายได้ใน",
+    hintLabel: "คำใบ้",
+    thinkingHint: "กำลังเตรียมคำใบ้...",
+    hintsNotReady: "กำลังเตรียมคำใบ้ รอสักครู่...",
+    retryHints: "ลองอีกครั้ง",
   },
 };

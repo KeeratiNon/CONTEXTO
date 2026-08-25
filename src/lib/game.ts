@@ -1,10 +1,30 @@
+import { nextCluePack } from "./clues";
 import { COPY } from "./copy";
 import { langFromPuzzleId } from "./lang";
 import { GameError, MAX_HINTS } from "./types";
 import { normalizeWord } from "./words";
-import { getPuzzleRanks, nearbyWords } from "./puzzle";
+import { getPuzzleRanks, loadPuzzle, nearbyWords, savePuzzle } from "./puzzle";
+import type { StoredPuzzle } from "./types";
 
-const FIRST_HINT_RANK = 80;
+function hasPreparedClues(puzzle: StoredPuzzle): boolean {
+  // Only AI packs count — ignore old template/local caches
+  return puzzle.cluesSource === "ai" && puzzle.clues?.length === MAX_HINTS;
+}
+
+export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
+  if (hasPreparedClues(puzzle) && puzzle.clues) return puzzle.clues;
+
+  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
+  const pack = await nextCluePack({
+    secret: puzzle.secret,
+    lang,
+    guessed: [],
+  });
+  puzzle.clues = pack.planned;
+  puzzle.cluesSource = pack.source;
+  savePuzzle(puzzle);
+  return pack.planned;
+}
 
 export async function submitGuess(puzzleId: string, rawWord: string) {
   const lang = langFromPuzzleId(puzzleId);
@@ -31,55 +51,40 @@ export async function submitGuess(puzzleId: string, rawWord: string) {
 
 export async function submitHint(
   puzzleId: string,
-  guessed: string[],
   hintsUsed: number,
+  _guessed: string[] = [],
+  _revealed: string[] = [],
+  planned: string[] = [],
 ) {
   const lang = langFromPuzzleId(puzzleId);
-  if (hintsUsed >= MAX_HINTS) {
-    throw new GameError("hint_limit", `You can use at most ${MAX_HINTS} hints.`);
+  if (hintsUsed < 0 || hintsUsed >= MAX_HINTS) {
+    throw new GameError(
+      "hint_limit",
+      lang === "th" ? "ใบ้ครบแล้ว" : `You can use at most ${MAX_HINTS} hints.`,
+    );
   }
 
-  const { puzzle, ranks } = await getPuzzleRanks(puzzleId);
-  const guessedSet = new Set(guessed.map((item) => normalizeWord(item, lang)).filter(Boolean));
+  const puzzle = loadPuzzle(puzzleId);
+  let plannedClues = planned.map((clue) => clue.trim()).filter(Boolean);
 
-  let best = Infinity;
-  for (const word of guessedSet) {
-    const rank = ranks.get(word);
-    if (rank !== undefined) best = Math.min(best, rank);
-  }
-
-  const byRank = new Map<number, string>();
-  for (const [word, rank] of ranks) byRank.set(rank, word);
-
-  const revealAnswer = () => ({
-    word: puzzle.secret,
-    rank: 1 as const,
-    fromHint: true as const,
-    correct: true,
-    secret: puzzle.secret,
-    nearby: nearbyWords(ranks),
-  });
-
-  if (Number.isFinite(best) && best <= 2) {
-    return revealAnswer();
-  }
-
-  const target = Number.isFinite(best)
-    ? Math.ceil(best / 2)
-    : FIRST_HINT_RANK;
-
-  if (target <= 1) {
-    return revealAnswer();
-  }
-
-  for (let rank = target; rank >= 2; rank -= 1) {
-    const word = byRank.get(rank);
-    if (word && !guessedSet.has(word)) {
-      return { word, rank, fromHint: true as const, correct: false };
+  if (plannedClues.length !== MAX_HINTS) {
+    if (!hasPreparedClues(puzzle)) {
+      throw new GameError(
+        "hint_unavailable",
+        lang === "th" ? "คำใบ้ยังไม่พร้อม" : "Hints are not ready yet.",
+        503,
+      );
     }
+    plannedClues = puzzle.clues!;
   }
 
-  return revealAnswer();
+  return {
+    clue: plannedClues[hintsUsed],
+    index: hintsUsed + 1,
+    total: MAX_HINTS,
+    clues: plannedClues.slice(0, hintsUsed + 1),
+    planned: plannedClues,
+  };
 }
 
 export async function giveUp(puzzleId: string) {

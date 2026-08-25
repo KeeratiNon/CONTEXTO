@@ -9,6 +9,7 @@
     "lint": "eslint",
     "build-vocab": "tsx scripts/build-vocab.ts",
     "build-vocab:th": "tsx scripts/build-vocab-th.ts",
+    "tag-categories:th": "tsx scripts/tag-categories-th.ts",
     "seed": "tsx scripts/seed.ts",
     "seed:glove": "EMBEDDING_PROVIDER=glove tsx scripts/seed.ts",
     "seed:local": "EMBEDDING_PROVIDER=local tsx scripts/seed.ts",
@@ -16,7 +17,7 @@
     "prepare-data": "npm run build-vocab && npm run seed",
     "prepare-data:th": "npm run build-vocab:th && npm run seed:th",
     "plot-positions": "tsx scripts/plot-word-positions.ts",
-    "plot-positions:th": "LANGUAGE=th tsx scripts/plot-word-positions.ts"
+    "plot-positions:th": "LANGUAGE=th tsx scripts/plot-positions.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

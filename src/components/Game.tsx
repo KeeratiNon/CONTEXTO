@@ -19,6 +19,8 @@ type SaveState = {
   won: boolean;
   gaveUp: boolean;
   secret?: string;
+  clues?: string[];
+  plannedClues?: string[];
 };
 
 type Modal = "help" | "menu" | "win" | "gaveup" | "confirm-giveup" | null;
@@ -58,6 +60,10 @@ export function Game() {
   const [won, setWon] = useState(false);
   const [gaveUp, setGaveUp] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
+  const [clues, setClues] = useState<string[]>([]);
+  const [plannedClues, setPlannedClues] = useState<string[]>([]);
+  const [hintBusy, setHintBusy] = useState(false);
+  const [hintsPreparing, setHintsPreparing] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
   const [flashWord, setFlashWord] = useState<string | null>(null);
   const [pendingWord, setPendingWord] = useState<string | null>(null);
@@ -65,8 +71,14 @@ export function Game() {
 
   const over = won || gaveUp;
   const t = COPY[lang];
-  const hintsUsed = guesses.filter((guess) => guess.fromHint).length;
+  const hintsUsed = clues.length;
   const hintsLeft = Math.max(0, MAX_HINTS - hintsUsed);
+  const hintsReady = plannedClues.length === MAX_HINTS;
+  const bootLoading =
+    loadingPuzzle ||
+    ((hintsPreparing || !hintsReady) && !over && !notSeeded && !error);
+  const hintDisabled =
+    over || busy || hintBusy || !puzzle || hintsLeft <= 0 || hintsPreparing;
   const lastGuess = guesses[guesses.length - 1] ?? null;
   const sortedGuesses = useMemo(
     () => [...guesses].sort((a, b) => a.rank - b.rank),
@@ -75,19 +87,55 @@ export function Game() {
 
   const persist = useCallback(
     (next: Partial<SaveState> & { puzzleId: string; guesses: Guess[] }) => {
+      const prev = readSave(next.puzzleId);
       writeSave({
         puzzleId: next.puzzleId,
         guesses: next.guesses,
         won: next.won ?? false,
         gaveUp: next.gaveUp ?? false,
         secret: next.secret,
+        clues: next.clues ?? prev?.clues,
+        plannedClues: next.plannedClues ?? prev?.plannedClues,
       });
     },
     [],
   );
 
+  const ensureHints = useCallback(async (puzzleId: string) => {
+    setHintsPreparing(true);
+    try {
+      const response = await fetch("/api/hint/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ puzzleId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || t.hintsNotReady);
+        return false;
+      }
+      if (Array.isArray(data.planned) && data.planned.length === MAX_HINTS) {
+        setPlannedClues(data.planned);
+        const saved = readSave(puzzleId);
+        if (saved) {
+          writeSave({ ...saved, plannedClues: data.planned });
+        }
+        setError("");
+        return true;
+      }
+      setError(t.hintsNotReady);
+      return false;
+    } catch {
+      setError(t.networkError);
+      return false;
+    } finally {
+      setHintsPreparing(false);
+    }
+  }, [t.hintsNotReady, t.networkError]);
+
   const loadPuzzle = useCallback(async (nextMode: "daily" | "unlimited", nextLang: GameLang) => {
     setLoadingPuzzle(true);
+    setHintsPreparing(false);
     setError("");
     setNotSeeded(false);
     try {
@@ -109,24 +157,39 @@ export function Game() {
       const meta = data as PuzzleMeta;
       setPuzzle(meta);
       const saved = readSave(meta.id);
+      const serverPlanned =
+        meta.plannedClues?.length === MAX_HINTS ? meta.plannedClues : [];
+      const savedPlanned =
+        saved?.plannedClues?.length === MAX_HINTS ? saved.plannedClues : [];
+      const planned = serverPlanned.length ? serverPlanned : savedPlanned;
+      const alreadyOver = Boolean(saved?.won || saved?.gaveUp);
       if (saved && saved.puzzleId === meta.id) {
         setGuesses(saved.guesses);
         setWon(saved.won);
         setGaveUp(saved.gaveUp);
         setSecret(saved.secret ?? null);
+        setClues(saved.clues ?? []);
+        setPlannedClues(planned);
         if (saved.won) setModal("win");
       } else {
         setGuesses([]);
         setWon(false);
         setGaveUp(false);
         setSecret(null);
+        setClues([]);
+        setPlannedClues(planned);
+      }
+
+      if (!alreadyOver && planned.length !== MAX_HINTS) {
+        setHintsPreparing(true);
+        await ensureHints(meta.id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load puzzle");
     } finally {
       setLoadingPuzzle(false);
     }
-  }, []);
+  }, [ensureHints]);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_KEY);
@@ -166,12 +229,14 @@ export function Game() {
     setWon(false);
     setGaveUp(false);
     setSecret(null);
+    setClues([]);
+    setPlannedClues([]);
     await loadPuzzle(mode, nextLang);
   }
 
-  async function sendGuess(word: string, fromHint = false) {
+  async function sendGuess(word: string) {
     if (!puzzle || over) return;
-    if (busy && !fromHint) return;
+    if (busy) return;
     const trimmed = lang === "th" ? word.trim() : word.trim().toLowerCase();
     if (!trimmed) return;
 
@@ -203,7 +268,6 @@ export function Game() {
       const guess: Guess = {
         word: data.word,
         rank: data.rank,
-        fromHint,
       };
       const nextGuesses = [...guesses, guess];
       setPendingWord(null);
@@ -219,9 +283,11 @@ export function Game() {
           guesses: nextGuesses,
           won: true,
           secret: data.secret,
+          clues,
+          plannedClues,
         });
       } else {
-        persist({ puzzleId: puzzle.id, guesses: nextGuesses });
+        persist({ puzzleId: puzzle.id, guesses: nextGuesses, clues, plannedClues });
       }
     } catch {
       setPendingWord(null);
@@ -239,34 +305,52 @@ export function Game() {
   }
 
   async function onHint() {
-    if (!puzzle || over || busy || hintsLeft <= 0) return;
+    if (!puzzle || over || busy || hintBusy || hintsLeft <= 0 || hintsPreparing) return;
+    if (!hintsReady) {
+      void ensureHints(puzzle.id);
+      return;
+    }
     setModal(null);
-    setBusy(true);
+    setHintBusy(true);
     setError("");
-    setPendingWord("");
     try {
       const response = await fetch("/api/hint", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           puzzleId: puzzle.id,
-          guessed: guesses.map((guess) => guess.word),
           hintsUsed,
+          guessed: guesses.map((guess) => guess.word),
+          revealed: clues,
+          planned: plannedClues,
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        setPendingWord(null);
         setError(data.message || (lang === "th" ? "ไม่มีคำใบ้" : "No hint available."));
         return;
       }
-      setBusy(false);
-      await sendGuess(data.word, true);
+      const nextClues: string[] = Array.isArray(data.clues)
+        ? data.clues
+        : [...clues, data.clue].filter(Boolean);
+      const nextPlanned: string[] = Array.isArray(data.planned)
+        ? data.planned
+        : plannedClues;
+      setClues(nextClues);
+      setPlannedClues(nextPlanned);
+      persist({
+        puzzleId: puzzle.id,
+        guesses,
+        won,
+        gaveUp,
+        secret: secret ?? undefined,
+        clues: nextClues,
+        plannedClues: nextPlanned,
+      });
     } catch {
-      setPendingWord(null);
       setError(t.networkError);
     } finally {
-      setBusy(false);
+      setHintBusy(false);
     }
   }
 
@@ -297,6 +381,8 @@ export function Game() {
         guesses: nextGuesses,
         gaveUp: true,
         secret: data.secret,
+        clues,
+        plannedClues,
       });
     } catch {
       setError(t.networkError);
@@ -312,6 +398,7 @@ export function Game() {
           className="icon-btn"
           onClick={() => setModal("menu")}
           aria-label="Menu"
+          disabled={bootLoading}
         >
           ☰
         </button>
@@ -319,8 +406,12 @@ export function Game() {
           <h1>Contexto</h1>
           <p>
             {puzzle?.gameNumber ? `Game #${puzzle.gameNumber}` : t.unlimited}
-            <span className="dot">·</span>
-            {t.guesses}: {guesses.length}
+            {!bootLoading ? (
+              <>
+                <span className="dot">·</span>
+                {t.guesses}: {guesses.length}
+              </>
+            ) : null}
           </p>
         </div>
         <div className="header-right">
@@ -328,12 +419,14 @@ export function Game() {
             <button
               className={lang === "en" ? "active" : ""}
               onClick={() => void switchLang("en")}
+              disabled={bootLoading}
             >
               EN
             </button>
             <button
               className={lang === "th" ? "active" : ""}
               onClick={() => void switchLang("th")}
+              disabled={bootLoading}
             >
               TH
             </button>
@@ -348,93 +441,147 @@ export function Game() {
         </div>
       </header>
 
-      <nav className="tabs">
-        <button
-          className={mode === "daily" ? "active" : ""}
-          onClick={() => void switchMode("daily")}
-        >
-          {t.daily}
-        </button>
-        <button
-          className={mode === "unlimited" ? "active" : ""}
-          onClick={() => void switchMode("unlimited")}
-        >
-          {t.unlimited}
-        </button>
-      </nav>
-
       {notSeeded ? (
         <div className="banner">
           <strong>{t.notSeededTitle}</strong>
           <p>{t.notSeededBody}</p>
         </div>
-      ) : null}
-
-      <div className="actions">
-        <button
-          onClick={onHint}
-          disabled={over || busy || !puzzle || hintsLeft <= 0}
-        >
-          {t.hint} · {hintsLeft}
-        </button>
-        <button
-          onClick={() => setModal("confirm-giveup")}
-          disabled={over || busy || !puzzle}
-        >
-          {t.giveUp}
-        </button>
-      </div>
-
-      <form className="guess-form" onSubmit={onSubmit}>
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder={over ? t.gameOver : t.typeWord}
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          autoFocus
-          disabled={over || !puzzle}
-          aria-label="Guess"
-        />
-        <button
-          type="submit"
-          disabled={over || busy || !puzzle || !input.trim()}
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          {t.enter}
-        </button>
-      </form>
-
-      {error ? <p className="error">{error}</p> : <p className="error spacer" />}
-
-      {loadingPuzzle || pendingWord !== null ? (
-        <p className="calculating" aria-live="polite">
-          {t.calculating}
-        </p>
-      ) : lastGuess ? (
-        <div className="latest-guess">
-          <GuessBar
-            guess={lastGuess}
-            vocabSize={puzzle?.vocabSize ?? 70000}
-            flash={lastGuess.word === flashWord}
-          />
+      ) : bootLoading ? (
+        <div className="boot-screen" aria-busy="true" aria-live="polite">
+          <div className="boot-orb" />
+          <p className="boot-title">{t.thinkingHint}</p>
         </div>
-      ) : null}
+      ) : !hintsReady && !over ? (
+        <div className="boot-screen">
+          <p className="boot-title">{error || t.hintsNotReady}</p>
+          <button
+            className="btn primary"
+            onClick={() => puzzle && void ensureHints(puzzle.id)}
+            disabled={!puzzle || hintsPreparing}
+          >
+            {t.retryHints}
+          </button>
+        </div>
+      ) : (
+        <>
+          <nav className="tabs">
+            <button
+              className={mode === "daily" ? "active" : ""}
+              onClick={() => void switchMode("daily")}
+            >
+              {t.daily}
+            </button>
+            <button
+              className={mode === "unlimited" ? "active" : ""}
+              onClick={() => void switchMode("unlimited")}
+            >
+              {t.unlimited}
+            </button>
+          </nav>
 
-      {loadingPuzzle ? null : (
-      <section className="guess-list" aria-live="polite">
-        {sortedGuesses.map((guess) => (
-          <GuessBar
-            key={guess.word}
-            guess={guess}
-            vocabSize={puzzle?.vocabSize ?? 70000}
-            current={guess.word === lastGuess?.word}
-          />
-        ))}
-      </section>
+          {clues.length ? (
+            <section className="clue-rail" aria-label={t.hintLabel}>
+              {clues.map((clue, index) => (
+                <div key={`${index}-${clue}`} className="clue-chip">
+                  <span className="clue-n">
+                    {t.hintLabel} {index + 1}
+                  </span>
+                  <span className="clue-text">{clue}</span>
+                </div>
+              ))}
+            </section>
+          ) : null}
+
+          <div className="actions">
+            {over ? (
+              <>
+                <button
+                  onClick={() => setModal(won ? "win" : "gaveup")}
+                  disabled={!won && !secret}
+                >
+                  {t.viewResults}
+                </button>
+                <button
+                  className="play-again"
+                  onClick={() => void switchMode("unlimited", true)}
+                  disabled={busy || loadingPuzzle}
+                >
+                  {t.playAgain}
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => void onHint()} disabled={hintDisabled}>
+                  {!hintsReady
+                    ? hintsPreparing
+                      ? t.thinkingHint
+                      : t.retryHints
+                    : `${t.hint} · ${hintsLeft}`}
+                </button>
+                <button
+                  onClick={() => setModal("confirm-giveup")}
+                  disabled={busy || !puzzle}
+                >
+                  {t.giveUp}
+                </button>
+              </>
+            )}
+          </div>
+
+          <form className="guess-form" onSubmit={onSubmit}>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder={over ? t.gameOver : t.typeWord}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              disabled={over || !puzzle}
+              aria-label="Guess"
+            />
+            <button
+              type="submit"
+              disabled={over || busy || !puzzle || !input.trim()}
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              {t.enter}
+            </button>
+          </form>
+
+          {error ? <p className="error">{error}</p> : <p className="error spacer" />}
+
+          {hintsPreparing && !clues.length ? (
+            <p className="calculating" aria-live="polite">
+              {t.thinkingHint}
+            </p>
+          ) : hintBusy || pendingWord !== null ? (
+            <p className="calculating" aria-live="polite">
+              {hintBusy ? t.thinkingHint : t.calculating}
+            </p>
+          ) : lastGuess ? (
+            <div className="latest-guess">
+              <GuessBar
+                guess={lastGuess}
+                vocabSize={puzzle?.vocabSize ?? 70000}
+                flash={lastGuess.word === flashWord}
+              />
+            </div>
+          ) : null}
+
+          <section className="guess-list" aria-live="polite">
+            {sortedGuesses.map((guess) => (
+              <GuessBar
+                key={guess.word}
+                guess={guess}
+                vocabSize={puzzle?.vocabSize ?? 70000}
+                current={guess.word === lastGuess?.word}
+              />
+            ))}
+          </section>
+        </>
       )}
 
       {modal === "help" ? (
@@ -446,12 +593,12 @@ export function Game() {
           }}
         />
       ) : null}
-      {modal === "menu" ? (
+      {modal === "menu" && !bootLoading && hintsReady ? (
         <Menu
           lang={lang}
           dark={dark}
           disabled={over || busy || !puzzle}
-          hintDisabled={over || busy || !puzzle || hintsLeft <= 0}
+          hintDisabled={hintDisabled}
           hintsLeft={hintsLeft}
           onClose={() => setModal(null)}
           onHowTo={() => setModal("help")}
@@ -465,7 +612,6 @@ export function Game() {
           puzzle={puzzle}
           guesses={guesses}
           onClose={() => setModal(null)}
-          onUnlimited={() => void switchMode("unlimited", true)}
         />
       ) : null}
       {modal === "gaveup" && secret ? (
@@ -473,7 +619,6 @@ export function Game() {
           lang={lang}
           secret={secret}
           onClose={() => setModal(null)}
-          onUnlimited={() => void switchMode("unlimited", true)}
         />
       ) : null}
       {modal === "confirm-giveup" ? (

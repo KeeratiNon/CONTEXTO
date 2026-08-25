@@ -18,6 +18,7 @@ export type PuzzleMeta = {
   date?: string;
   gameNumber?: number;
   vocabSize: number;
+  plannedClues?: string[];
 };
 
 export type SeedMeta = {
@@ -32,6 +33,7 @@ export type RankCache = {
   puzzleId: string;
   secret: string;
   ranks: Record<string, number>;
+  rankVersion?: number;
 };
 
 export type StoredPuzzle = {
@@ -41,6 +43,8 @@ export type StoredPuzzle = {
   secret: string;
   date?: string;
   createdAt: string;
+  clues?: string[];
+  cluesSource?: "ai";
 };
 
 export class GameError extends Error {

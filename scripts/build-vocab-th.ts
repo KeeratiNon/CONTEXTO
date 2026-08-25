@@ -37,8 +37,14 @@ type DatasetRow = {
   length: number;
   tier: number;
   category: string;
+  categories: string[];
   source: string;
 };
+
+function rowCategories(row: DatasetRow): string[] {
+  if (row.categories.length) return row.categories;
+  return row.category ? [row.category] : [];
+}
 
 function datasetPath(root: string) {
   return path.join(root, "thai-contexto-70k.jsonl");
@@ -46,16 +52,16 @@ function datasetPath(root: string) {
 
 function ensureDataset(root: string) {
   const dest = datasetPath(root);
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 1_000_000) {
+    console.log(`Using existing ${dest}`);
+    return dest;
+  }
   const zip = process.env.THAI_DATASET_ZIP || DEFAULT_ZIP;
   if (fs.existsSync(zip)) {
     console.log(`Extracting dataset from ${path.basename(zip)}...`);
     execFileSync("unzip", ["-p", zip, ZIP_JSONL_PATH], {
       stdio: ["ignore", fs.openSync(dest, "w"), "inherit"],
     });
-    return dest;
-  }
-  if (fs.existsSync(dest) && fs.statSync(dest).size > 1_000_000) {
-    console.log(`Using existing ${dest}`);
     return dest;
   }
   throw new Error(
@@ -81,18 +87,24 @@ function loadDataset(file: string): DatasetRow[] {
       length?: number;
       tier?: number;
       category?: string;
+      categories?: unknown;
       source?: string;
     };
     const word = (raw.word ?? "").trim();
     if (!isThaiGuessToken(word) || seen.has(word)) continue;
     seen.add(word);
+    const category = raw.category ?? "general";
+    const categories = Array.isArray(raw.categories)
+      ? raw.categories.filter((item): item is string => typeof item === "string" && Boolean(item))
+      : [];
     rows.push({
       word,
       synsets: parseSynsets(raw.synsets),
       core: Boolean(raw.core),
       length: raw.length ?? word.length,
       tier: raw.tier ?? 3,
-      category: raw.category ?? "general",
+      category,
+      categories: categories.length ? categories : [category],
       source: raw.source ?? "wordnet",
     });
   }
@@ -106,10 +118,11 @@ function isNoun(row: DatasetRow) {
 function isSecretCandidate(row: DatasetRow) {
   if (THAI_FUNCTION_WORDS.has(row.word)) return false;
   if (row.word.length < SECRET_MIN_LEN || row.word.length > SECRET_MAX_LEN) return false;
-  if (row.source === "curated" && SECRET_CATEGORIES.has(row.category)) return true;
-  if (SECRET_CATEGORIES.has(row.category)) return true;
+  const categories = rowCategories(row);
+  if (row.source === "curated" && categories.some((category) => SECRET_CATEGORIES.has(category))) return true;
+  if (categories.some((category) => SECRET_CATEGORIES.has(category))) return true;
   if (THAI_SECRET_NOUNS.includes(row.word)) return true;
-  return row.tier <= 2 && isNoun(row) && row.category !== "abstract" && row.category !== "feeling";
+  return row.tier <= 2 && isNoun(row) && categories[0] !== "abstract" && categories[0] !== "feeling";
 }
 
 function pickSecrets(rows: DatasetRow[], playable: Set<string>): string[] {
@@ -138,7 +151,8 @@ function pickSecrets(rows: DatasetRow[], playable: Set<string>): string[] {
       .filter((row) => playable.has(row.word) && predicate(row) && isSecretCandidate(row))
       .sort(
         (a, b) =>
-          (SECRET_CATEGORIES.has(b.category) ? 1 : 0) - (SECRET_CATEGORIES.has(a.category) ? 1 : 0) ||
+          Number(rowCategories(b).some((category) => SECRET_CATEGORIES.has(category))) -
+            Number(rowCategories(a).some((category) => SECRET_CATEGORIES.has(category))) ||
           a.length - b.length ||
           a.word.localeCompare(b.word, "th"),
       );

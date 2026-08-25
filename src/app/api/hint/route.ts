@@ -8,8 +8,10 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       puzzleId?: string;
-      guessed?: string[];
       hintsUsed?: number;
+      guessed?: string[];
+      revealed?: string[];
+      planned?: string[];
     };
     if (!body.puzzleId) {
       return Response.json(
@@ -19,8 +21,10 @@ export async function POST(request: Request) {
     }
     const result = await submitHint(
       body.puzzleId,
-      body.guessed ?? [],
       body.hintsUsed ?? 0,
+      body.guessed ?? [],
+      body.revealed ?? [],
+      body.planned ?? [],
     );
     return Response.json(result);
   } catch (error) {

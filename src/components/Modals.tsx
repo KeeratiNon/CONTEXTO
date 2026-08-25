@@ -62,8 +62,9 @@ export function HowToPlay({ onClose, lang = "en" }: { onClose: () => void; lang?
             </li>
           </ul>
           <p>
-            ใบ้ได้สูงสุด <strong>3 ครั้ง</strong> แต่ละครั้งใกล้ขึ้นประมาณครึ่งหนึ่งของอันดับดีสุด
-            ถ้าอยู่ที่อันดับ 2 ใบ้จะเฉลยคำลับ ใบ้นับเป็นครั้งที่ทาย
+            ใบ้ได้สูงสุด <strong>3 ครั้ง</strong> ไม่ดึงคำจากคลังมาให้ทาย
+            ครั้งแรกใบ้หมวดกว้าง เช่น กินได้ ครั้งต่อมาเจาะจงขึ้น เช่น ผลไม้ แล้วลักษณะเด่น เช่น สีแดง
+            คำใบ้จะค้างไว้ด้านบน
           </p>
         </div>
       </Overlay>
@@ -101,9 +102,10 @@ export function HowToPlay({ onClose, lang = "en" }: { onClose: () => void; lang?
           </li>
         </ul>
         <p>
-          You can use up to <strong>3 hints</strong>. Each hint is about half
-          your best rank (rounded up) so the next one is always closer. If you
-          are at rank 2, a hint reveals the secret word. Hints count as guesses.
+          You can use up to <strong>3 hints</strong>. They are short clues, not
+          extra guesses: first a broad category (edible), then a tighter type
+          (fruit), then a distinctive trait (often red). Hints stay pinned at
+          the top.
         </p>
       </div>
     </Overlay>
@@ -114,34 +116,13 @@ export function WinModal({
   puzzle,
   guesses,
   onClose,
-  onUnlimited,
 }: {
   puzzle: PuzzleMeta;
   guesses: Guess[];
   onClose: () => void;
-  onUnlimited: () => void;
 }) {
   const lang = puzzle.lang ?? "en";
   const t = COPY[lang];
-  const label = puzzle.gameNumber
-    ? `Contexto #${puzzle.gameNumber}`
-    : lang === "th"
-      ? "Contexto ไม่จำกัด"
-      : "unlimited Contexto";
-
-  async function share() {
-    const squares = guesses.map((guess) => rankEmoji(guess.rank));
-    const rows: string[] = [];
-    for (let i = 0; i < squares.length; i += 12) {
-      rows.push(squares.slice(i, i + 12).join(""));
-    }
-    const text = `I got ${label} in ${guesses.length} guesses.\n\n${rows.join("\n")}\n`;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      /* ignore */
-    }
-  }
 
   return (
     <Overlay title={winCopy(guesses.length)} onClose={onClose}>
@@ -155,11 +136,8 @@ export function WinModal({
           ))}
         </div>
         <div className="modal-actions">
-          <button className="btn primary" onClick={share}>
-            {t.copy}
-          </button>
-          <button className="btn" onClick={onUnlimited}>
-            {t.playUnlimited}
+          <button className="btn primary" onClick={onClose}>
+            {t.close}
           </button>
         </div>
       </div>
@@ -170,12 +148,10 @@ export function WinModal({
 export function GaveUpModal({
   secret,
   onClose,
-  onUnlimited,
   lang = "en",
 }: {
   secret: string;
   onClose: () => void;
-  onUnlimited: () => void;
   lang?: GameLang;
 }) {
   const t = COPY[lang];
@@ -186,10 +162,7 @@ export function GaveUpModal({
           {lang === "th" ? "คำวันนี้คือ" : "Today's word was"} <strong>{secret}</strong>.
         </p>
         <div className="modal-actions">
-          <button className="btn primary" onClick={onUnlimited}>
-            {t.playUnlimited}
-          </button>
-          <button className="btn" onClick={onClose}>
+          <button className="btn primary" onClick={onClose}>
             {t.close}
           </button>
         </div>

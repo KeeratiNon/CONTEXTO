@@ -4,6 +4,7 @@ import { pathsFor } from "./paths";
 import { langFromPuzzleId, type GameLang } from "./lang";
 import type { RankCache, SeedMeta } from "./types";
 import { GameError } from "./types";
+import { loadWordSenses, relatednessScore } from "./categories";
 
 type WordRow = {
   word: string;
@@ -61,6 +62,8 @@ export async function getWordsTable(lang: GameLang) {
   return db.openTable("words");
 }
 
+export const RANK_VERSION = 6;
+
 export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<string, number>> {
   const meta = requireSeedMeta(lang);
   const table = await getWordsTable(lang);
@@ -88,12 +91,17 @@ export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<
   }
 
   const query = secretVector;
+  const senses = loadWordSenses(lang);
+  const secretSense = senses.get(secret);
   const scored = others.map((row) => {
     let dot = 0;
     for (let i = 0; i < query.length; i += 1) {
       dot += query[i] * row.vector[i];
     }
-    return { word: row.word, score: dot };
+    const otherSense = senses.get(row.word);
+    const relatedness =
+      secretSense && otherSense ? relatednessScore(secretSense, row.word, otherSense) : 0;
+    return { word: row.word, score: dot + relatedness };
   });
   scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word, lang === "th" ? "th" : "en"));
 
@@ -117,7 +125,7 @@ export async function getCachedRanks(puzzleId: string, secret: string): Promise<
 
   if (fs.existsSync(file)) {
     const cached = JSON.parse(fs.readFileSync(file, "utf8")) as RankCache;
-    if (cached.secret === secret) {
+    if (cached.secret === secret && cached.rankVersion === RANK_VERSION) {
       return new Map(Object.entries(cached.ranks));
     }
   }
@@ -126,6 +134,7 @@ export async function getCachedRanks(puzzleId: string, secret: string): Promise<
   const payload: RankCache = {
     puzzleId,
     secret,
+    rankVersion: RANK_VERSION,
     ranks: Object.fromEntries(ranks),
   };
   fs.writeFileSync(file, JSON.stringify(payload));

@@ -54,6 +54,10 @@ export function createUnlimitedPuzzle(lang: GameLang = "en"): StoredPuzzle {
   return puzzle;
 }
 
+export function savePuzzle(puzzle: StoredPuzzle) {
+  writePuzzle(puzzle, puzzle.lang ?? langFromPuzzleId(puzzle.id));
+}
+
 export function loadPuzzle(puzzleId: string): StoredPuzzle {
   const daily = parseDailyPuzzleId(puzzleId);
   if (daily) return getOrCreateDailyPuzzle(daily.date, daily.lang);
@@ -66,7 +70,11 @@ export function loadPuzzle(puzzleId: string): StoredPuzzle {
   return puzzle;
 }
 
-export function toPuzzleMeta(puzzle: StoredPuzzle, vocabSize: number): PuzzleMeta {
+export function toPuzzleMeta(
+  puzzle: StoredPuzzle,
+  vocabSize: number,
+  plannedClues?: string[],
+): PuzzleMeta {
   const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
   return {
     id: puzzle.id,
@@ -75,6 +83,8 @@ export function toPuzzleMeta(puzzle: StoredPuzzle, vocabSize: number): PuzzleMet
     date: puzzle.date,
     gameNumber: puzzle.date ? gameNumberForDate(puzzle.date) : undefined,
     vocabSize,
+    plannedClues:
+      plannedClues ?? (puzzle.cluesSource === "ai" ? puzzle.clues : undefined),
   };
 }
 
