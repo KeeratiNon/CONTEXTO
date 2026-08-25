@@ -1,6 +1,6 @@
 import { nextCluePack } from "./clues";
 import { COPY } from "./copy";
-import { langFromPuzzleId } from "./lang";
+import { cluesMatchLang, langFromPuzzleId } from "./lang";
 import { GameError, MAX_HINTS } from "./types";
 import { normalizeWord } from "./words";
 import { getPuzzleRanks, loadPuzzle, nearbyWords, savePuzzle } from "./puzzle";
@@ -8,7 +8,12 @@ import type { StoredPuzzle } from "./types";
 
 function hasPreparedClues(puzzle: StoredPuzzle): boolean {
   // Only AI packs count — ignore old template/local caches
-  return puzzle.cluesSource === "ai" && puzzle.clues?.length === MAX_HINTS;
+  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
+  return (
+    puzzle.cluesSource === "ai" &&
+    puzzle.clues?.length === MAX_HINTS &&
+    cluesMatchLang(puzzle.clues, lang)
+  );
 }
 
 export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {

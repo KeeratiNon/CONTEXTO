@@ -2,7 +2,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { pathsFor } from "./paths";
 import { GameError, type GameLang, type GameMode, type PuzzleMeta, type StoredPuzzle } from "./types";
-import { dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
+import { cluesMatchLang, dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
 import { gameNumberForDate } from "./date";
 import { loadSecrets, pickDailySecret, pickUnlimitedSecret } from "./words";
 import { getCachedRanks, requireSeedMeta } from "./vectordb";
@@ -84,7 +84,12 @@ export function toPuzzleMeta(
     gameNumber: puzzle.date ? gameNumberForDate(puzzle.date) : undefined,
     vocabSize,
     plannedClues:
-      plannedClues ?? (puzzle.cluesSource === "ai" ? puzzle.clues : undefined),
+      plannedClues ??
+      (puzzle.cluesSource === "ai" &&
+      puzzle.clues &&
+      cluesMatchLang(puzzle.clues, lang)
+        ? puzzle.clues
+        : undefined),
   };
 }
 

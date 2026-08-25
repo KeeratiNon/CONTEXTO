@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { categoriesFor, categoryDisplayName } from "./categories";
 import { animalKindFor, englishNamesFor, fruitFactsFor, glossNamesOtherSecret, hintFactError, specificHints } from "./clue-traits";
-import type { GameLang } from "./lang";
+import { hintMatchesLang, type GameLang } from "./lang";
 import { GameError, MAX_HINTS } from "./types";
 
 const GROQ_TIMEOUT_MS = 8_000;
@@ -100,12 +100,17 @@ function parseAiHintPack(
         if (cleaned.length >= MAX_HINTS) break;
         if (!hint || hint.length < 2) continue;
         if (containsTerm(hint, secret)) continue;
-        if (_lang === "th" && /[A-Za-z]{3,}/.test(hint)) continue;
+        if (!hintMatchesLang(hint, _lang)) continue;
         if (clueConflicts(hint, [...blocked, ...cleaned])) continue;
         cleaned.push(hint);
       }
       if (cleaned.length < MAX_HINTS) {
-        return { error: "a hint named the secret or repeated a guess" };
+        return {
+          error:
+            _lang === "en"
+              ? "hints must be English, not Thai"
+              : "a hint named the secret, used English, or repeated a guess",
+        };
       }
       if (!hintsPassFactCheck(secret, cleaned, _lang)) {
         return { error: "fact-check failed" };
@@ -164,6 +169,10 @@ function buildCluePackPrompt(options: {
       ? "ยังไม่มี"
       : "none yet";
   const language = options.lang === "th" ? "Thai" : "English";
+  const languageRules =
+    options.lang === "th"
+      ? "Write ALL hints in Thai script only. No English letters. Each hint under 16 Thai characters."
+      : "Write ALL hints in English only. No Thai script or other languages. Each hint under 6 English words.";
   const anchor = buildAnchorFacts(options.secret, options.lang);
   const names = englishNamesFor(options.secret);
   const nameLine = names.length
@@ -182,8 +191,9 @@ function buildCluePackPrompt(options: {
       : "Each hint must narrow toward the secret, not restate a broad category.";
 
   return [
-    "Identify the EXACT Thai/English word first, then write 3 progressive Contexto hints.",
-    `Language: ${language}. Secret (never say/spell/translate it in hints): ${options.secret}`,
+    `Identify this ${language} word first, then write 3 progressive Contexto hints in ${language}.`,
+    `Hint language: ${language} only. Secret (never say/spell/translate it in hints): ${options.secret}`,
+    languageRules,
     "If the spelling has several senses, pick the sense matching the given category.",
     anchor || "Use accurate world knowledge for this exact spelling.",
     nameLine,
@@ -194,7 +204,7 @@ function buildCluePackPrompt(options: {
     "Every hint must be factually true of THIS secret only. False colors, seeds, shells, legs, wings, or venom are forbidden.",
     "Do not copy traits from a similar fruit, animal, or nearby guess.",
     "Hint 1 broad true property. Hint 2 true subtype. Hint 3 distinctive true trait, still unnamed.",
-    "Thai <16 chars each. English <6 words each. No guessed words. No empty labels.",
+    "No guessed words. No empty labels.",
     options.rejectReason ? `REJECTED LAST ATTEMPT: ${options.rejectReason}` : "",
     'Return ONLY JSON {"meaning":"english gloss of THIS word","hints":["...","...","...","..."]} with 4 true candidates.',
   ].filter(Boolean).join("\n");
@@ -259,7 +269,7 @@ async function auditCluePackWithGroq(
       {
         role: "system",
         content:
-          "You fact-check Thai/English word-game hints. Return only JSON. Never name the secret in hints.",
+          `You fact-check ${options.lang === "th" ? "Thai" : "English"} word-game hints. Return only JSON in that same language. Never name the secret in hints.`,
       },
       {
         role: "user",
@@ -271,7 +281,10 @@ async function auditCluePackWithGroq(
           "Is EVERY hint factually true of THIS exact spelling — not a similar word?",
           "If all true, return {\"ok\":true,\"hints\":[same three hints]}.",
           "If any is false, return {\"ok\":false,\"why\":\"short reason\",\"hints\":[\"true1\",\"true2\",\"true3\"]} with 3 corrected true hints.",
-          "Thai hints <16 chars. Do not use the secret or a translation of it.",
+          options.lang === "th"
+            ? "Corrected hints must be Thai script only, under 16 characters. No English."
+            : "Corrected hints must be English only, under 6 words. No Thai script.",
+          "Do not use the secret or a translation of it.",
         ].join("\n"),
       },
     ]);
@@ -307,7 +320,7 @@ async function generateCluePackWithGroq(options: HintGenOptions): Promise<string
         {
           role: "system",
           content:
-            "Identify the exact word, then return only JSON with keys meaning and hints. Never put the secret in a hint. False physical traits are forbidden.",
+            `Identify the exact ${options.lang === "th" ? "Thai" : "English"} word, then return only JSON with keys meaning and hints. Hints must be in ${options.lang === "th" ? "Thai" : "English"} only. Never put the secret in a hint. False physical traits are forbidden.`,
         },
         {
           role: "user",

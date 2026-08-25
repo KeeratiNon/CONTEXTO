@@ -25,6 +25,19 @@ export function parseDailyPuzzleId(id: string): { lang: GameLang; date: string }
   return null;
 }
 
+export function hasThaiScript(text: string): boolean {
+  return /[\u0E00-\u0E7F]/.test(text);
+}
+
+export function hintMatchesLang(hint: string, lang: GameLang): boolean {
+  if (lang === "en") return !hasThaiScript(hint);
+  return !/[A-Za-z]{3,}/.test(hint);
+}
+
+export function cluesMatchLang(clues: string[], lang: GameLang): boolean {
+  return clues.length > 0 && clues.every((clue) => hintMatchesLang(clue, lang));
+}
+
 export function isThaiGuessToken(word: string): boolean {
   if (word.length < 2 || word.length > 18) return false;
   if (!/^[\u0E00-\u0E7F]+$/.test(word)) return false;

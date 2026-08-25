@@ -8,6 +8,7 @@ import {
   Menu,
   WinModal,
 } from "@/components/Modals";
+import { cluesMatchLang, langFromPuzzleId } from "@/lib/lang";
 import { MAX_HINTS, type GameLang, type Guess, type PuzzleMeta } from "@/lib/types";
 import { COPY } from "@/lib/copy";
 import { todayDate } from "@/lib/date";
@@ -118,7 +119,12 @@ export function Game() {
         setPlannedClues(data.planned);
         const saved = readSave(puzzleId);
         if (saved) {
-          writeSave({ ...saved, plannedClues: data.planned });
+          const keepClues =
+            saved.clues &&
+            cluesMatchLang(saved.clues, langFromPuzzleId(puzzleId))
+              ? saved.clues
+              : [];
+          writeSave({ ...saved, plannedClues: data.planned, clues: keepClues });
         }
         setError("");
         return true;
@@ -157,18 +163,29 @@ export function Game() {
       const meta = data as PuzzleMeta;
       setPuzzle(meta);
       const saved = readSave(meta.id);
+      const puzzleLang = meta.lang ?? nextLang;
       const serverPlanned =
-        meta.plannedClues?.length === MAX_HINTS ? meta.plannedClues : [];
+        meta.plannedClues?.length === MAX_HINTS &&
+        cluesMatchLang(meta.plannedClues, puzzleLang)
+          ? meta.plannedClues
+          : [];
       const savedPlanned =
-        saved?.plannedClues?.length === MAX_HINTS ? saved.plannedClues : [];
+        saved?.plannedClues?.length === MAX_HINTS &&
+        cluesMatchLang(saved.plannedClues, puzzleLang)
+          ? saved.plannedClues
+          : [];
       const planned = serverPlanned.length ? serverPlanned : savedPlanned;
       const alreadyOver = Boolean(saved?.won || saved?.gaveUp);
+      const savedClues =
+        saved?.clues?.length && cluesMatchLang(saved.clues, puzzleLang)
+          ? saved.clues
+          : [];
       if (saved && saved.puzzleId === meta.id) {
         setGuesses(saved.guesses);
         setWon(saved.won);
         setGaveUp(saved.gaveUp);
         setSecret(saved.secret ?? null);
-        setClues(saved.clues ?? []);
+        setClues(savedClues);
         setPlannedClues(planned);
         if (saved.won) setModal("win");
       } else {
@@ -190,6 +207,18 @@ export function Game() {
       setLoadingPuzzle(false);
     }
   }, [ensureHints]);
+
+  useEffect(() => {
+    if (!puzzle || over || hintsPreparing) return;
+    const puzzleLang = puzzle.lang ?? lang;
+    const plannedBad =
+      plannedClues.length > 0 && !cluesMatchLang(plannedClues, puzzleLang);
+    const cluesBad = clues.length > 0 && !cluesMatchLang(clues, puzzleLang);
+    if (!plannedBad && !cluesBad) return;
+    setClues([]);
+    setPlannedClues([]);
+    void ensureHints(puzzle.id);
+  }, [puzzle, lang, over, hintsPreparing, plannedClues, clues, ensureHints]);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_KEY);
