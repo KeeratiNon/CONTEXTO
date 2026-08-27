@@ -91,7 +91,12 @@ function main() {
   const paths = pathsFor("th");
   const dict = path.join(paths.rawDir, "wordnet-3.0", "dict");
   if (!fs.existsSync(path.join(dict, "data.noun"))) {
-    throw new Error(`Missing WordNet 3.0 at ${dict}`);
+    if (fs.existsSync(paths.wnNeighborsPath)) {
+      console.log(`WordNet 3.0 not on this machine; keeping ${paths.wnNeighborsPath}`);
+      return;
+    }
+    console.warn(`WordNet 3.0 missing at ${dict}; skip neighbor rebuild (ranking still works).`);
+    return;
   }
 
   const synsetsOf = new Map<string, string[]>();
