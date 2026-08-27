@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { pathsFor } from "./paths";
-import { GameError, type GameLang, type GameMode, type PuzzleMeta, type StoredPuzzle } from "./types";
+import { GameError, MAX_HINTS, type GameLang, type GameMode, type PuzzleMeta, type SecretClueCache, type StoredPuzzle } from "./types";
 import { cluesMatchLang, dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
 import { gameNumberForDate } from "./date";
 import { loadSecrets, pickDailySecret, pickUnlimitedSecret } from "./words";
@@ -20,6 +20,68 @@ function readPuzzle(id: string, lang: GameLang): StoredPuzzle | null {
 function writePuzzle(puzzle: StoredPuzzle, lang: GameLang) {
   fs.mkdirSync(pathsFor(lang).puzzlesDir, { recursive: true });
   fs.writeFileSync(puzzlePath(puzzle.id, lang), JSON.stringify(puzzle, null, 2));
+}
+
+function cluePackPath(secret: string, lang: GameLang): string {
+  return `${pathsFor(lang).cluesDir}/${encodeURIComponent(secret)}.json`;
+}
+
+export function usableAiClues(
+  clues: string[] | undefined,
+  source: StoredPuzzle["cluesSource"],
+  lang: GameLang,
+): string[] | null {
+  if (source !== "ai" || clues?.length !== MAX_HINTS) return null;
+  if (!cluesMatchLang(clues, lang)) return null;
+  return clues;
+}
+
+function readCluesForSecret(secret: string, lang: GameLang): string[] | null {
+  const file = cluePackPath(secret, lang);
+  if (!fs.existsSync(file)) return null;
+  const cached = JSON.parse(fs.readFileSync(file, "utf8")) as SecretClueCache;
+  if (cached.secret !== secret) return null;
+  return usableAiClues(cached.clues, cached.cluesSource, lang);
+}
+
+export function saveCluesForSecret(secret: string, lang: GameLang, clues: string[]) {
+  const dir = pathsFor(lang).cluesDir;
+  fs.mkdirSync(dir, { recursive: true });
+  const payload: SecretClueCache = { secret, clues, cluesSource: "ai" };
+  fs.writeFileSync(cluePackPath(secret, lang), JSON.stringify(payload, null, 2));
+}
+
+function findCluesInPuzzles(secret: string, lang: GameLang): string[] | null {
+  const dir = pathsFor(lang).puzzlesDir;
+  if (!fs.existsSync(dir)) return null;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const puzzle = JSON.parse(fs.readFileSync(`${dir}/${name}`, "utf8")) as StoredPuzzle;
+    if (puzzle.secret !== secret) continue;
+    const clues = usableAiClues(puzzle.clues, puzzle.cluesSource, lang);
+    if (clues) return clues;
+  }
+  return null;
+}
+
+/** Reuse AI clues already generated for this secret, even from another puzzle. */
+export function hydratePuzzleClues(puzzle: StoredPuzzle): string[] | null {
+  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
+  const own = usableAiClues(puzzle.clues, puzzle.cluesSource, lang);
+  if (own) {
+    if (!readCluesForSecret(puzzle.secret, lang)) saveCluesForSecret(puzzle.secret, lang, own);
+    return own;
+  }
+
+  const shared = readCluesForSecret(puzzle.secret, lang) ?? findCluesInPuzzles(puzzle.secret, lang);
+  if (!shared) return null;
+
+  console.info(`[hints] reuse pack for ${puzzle.secret}`);
+  saveCluesForSecret(puzzle.secret, lang, shared);
+  puzzle.clues = shared;
+  puzzle.cluesSource = "ai";
+  savePuzzle(puzzle);
+  return shared;
 }
 
 export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): StoredPuzzle {
@@ -85,11 +147,8 @@ export function toPuzzleMeta(
     vocabSize,
     plannedClues:
       plannedClues ??
-      (puzzle.cluesSource === "ai" &&
-      puzzle.clues &&
-      cluesMatchLang(puzzle.clues, lang)
-        ? puzzle.clues
-        : undefined),
+      usableAiClues(puzzle.clues, puzzle.cluesSource, lang) ??
+      undefined,
   };
 }
 
@@ -105,7 +164,8 @@ export async function openPuzzle(
       : getOrCreateDailyPuzzle(date ?? new Date().toISOString().slice(0, 10), lang);
 
   await getCachedRanks(puzzle.id, puzzle.secret);
-  return { meta: toPuzzleMeta(puzzle, seed.vocabSize), puzzle };
+  const planned = hydratePuzzleClues(puzzle) ?? undefined;
+  return { meta: toPuzzleMeta(puzzle, seed.vocabSize, planned), puzzle };
 }
 
 export async function getPuzzleRanks(puzzleId: string) {

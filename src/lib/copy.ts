@@ -28,6 +28,7 @@ type Copy = {
   foundIn: string;
   hintLabel: string;
   thinkingHint: string;
+  preparingGame: string;
   hintsNotReady: string;
   retryHints: string;
 };
@@ -61,6 +62,7 @@ export const COPY: Record<GameLang, Copy> = {
     foundIn: "You found the word in",
     hintLabel: "Hint",
     thinkingHint: "preparing hints...",
+    preparingGame: "getting ready...",
     hintsNotReady: "Hints are still preparing...",
     retryHints: "Try again",
   },
@@ -92,6 +94,7 @@ export const COPY: Record<GameLang, Copy> = {
     foundIn: "คุณทายได้ใน",
     hintLabel: "คำใบ้",
     thinkingHint: "กำลังเตรียมคำใบ้...",
+    preparingGame: "กำลังเตรียมเกม...",
     hintsNotReady: "กำลังเตรียมคำใบ้ รอสักครู่...",
     retryHints: "ลองอีกครั้ง",
   },

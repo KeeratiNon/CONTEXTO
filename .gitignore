@@ -37,11 +37,13 @@ yarn-error.log*
 # vector db + caches
 /data/en/ranks
 /data/en/puzzles
+/data/en/clues
 /data/en/models
 /data/en/raw
 /data/th/lancedb
 /data/th/ranks
 /data/th/puzzles
+/data/th/clues
 /data/th/models
 /data/th/raw
 /data/th/meta.json

@@ -113,21 +113,75 @@ export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<
   return ranks;
 }
 
-function ranksPath(puzzleId: string, lang: GameLang): string {
+const MAX_RANK_MEM = 8;
+
+const globalForRanks = globalThis as unknown as {
+  __contextoRankMem?: Map<string, Map<string, number>>;
+  __contextoRankInflight?: Map<string, Promise<Map<string, number>>>;
+};
+
+function rankMem() {
+  if (!globalForRanks.__contextoRankMem) globalForRanks.__contextoRankMem = new Map();
+  return globalForRanks.__contextoRankMem;
+}
+
+function rankInflight() {
+  if (!globalForRanks.__contextoRankInflight) globalForRanks.__contextoRankInflight = new Map();
+  return globalForRanks.__contextoRankInflight;
+}
+
+function rankMemKey(lang: GameLang, secret: string) {
+  return `${lang}:${secret}:v${RANK_VERSION}`;
+}
+
+function rememberRanks(key: string, ranks: Map<string, number>) {
+  const mem = rankMem();
+  if (mem.has(key)) mem.delete(key);
+  mem.set(key, ranks);
+  while (mem.size > MAX_RANK_MEM) {
+    const oldest = mem.keys().next().value;
+    if (oldest === undefined) break;
+    mem.delete(oldest);
+  }
+  return ranks;
+}
+
+function puzzleRanksPath(puzzleId: string, lang: GameLang): string {
   return `${pathsFor(lang).ranksDir}/${puzzleId.replaceAll("/", "_")}.json`;
 }
 
-export async function getCachedRanks(puzzleId: string, secret: string): Promise<Map<string, number>> {
+function secretRanksPath(secret: string, lang: GameLang): string {
+  return `${pathsFor(lang).ranksDir}/secret-${encodeURIComponent(secret)}.json`;
+}
+
+function ranksFromCache(file: string, secret: string): Map<string, number> | null {
+  if (!fs.existsSync(file)) return null;
+  const cached = JSON.parse(fs.readFileSync(file, "utf8")) as RankCache;
+  if (cached.secret !== secret || cached.rankVersion !== RANK_VERSION) return null;
+  return new Map(Object.entries(cached.ranks));
+}
+
+async function loadOrComputeRanks(puzzleId: string, secret: string): Promise<Map<string, number>> {
   const lang = langFromPuzzleId(puzzleId);
   const dir = pathsFor(lang).ranksDir;
   fs.mkdirSync(dir, { recursive: true });
-  const file = ranksPath(puzzleId, lang);
+  const bySecret = secretRanksPath(secret, lang);
+  const byPuzzle = puzzleRanksPath(puzzleId, lang);
 
-  if (fs.existsSync(file)) {
-    const cached = JSON.parse(fs.readFileSync(file, "utf8")) as RankCache;
-    if (cached.secret === secret && cached.rankVersion === RANK_VERSION) {
-      return new Map(Object.entries(cached.ranks));
+  const cached = ranksFromCache(bySecret, secret) ?? ranksFromCache(byPuzzle, secret);
+  if (cached) {
+    if (!fs.existsSync(bySecret)) {
+      fs.writeFileSync(
+        bySecret,
+        JSON.stringify({
+          puzzleId,
+          secret,
+          rankVersion: RANK_VERSION,
+          ranks: Object.fromEntries(cached),
+        } satisfies RankCache),
+      );
     }
+    return cached;
   }
 
   const ranks = await rankAllWords(secret, lang);
@@ -137,6 +191,24 @@ export async function getCachedRanks(puzzleId: string, secret: string): Promise<
     rankVersion: RANK_VERSION,
     ranks: Object.fromEntries(ranks),
   };
-  fs.writeFileSync(file, JSON.stringify(payload));
+  fs.writeFileSync(bySecret, JSON.stringify(payload));
   return ranks;
+}
+
+export async function getCachedRanks(puzzleId: string, secret: string): Promise<Map<string, number>> {
+  const lang = langFromPuzzleId(puzzleId);
+  const key = rankMemKey(lang, secret);
+  const hit = rankMem().get(key);
+  if (hit) return hit;
+
+  const pending = rankInflight().get(key);
+  if (pending) return pending;
+
+  const work = loadOrComputeRanks(puzzleId, secret).then((ranks) => rememberRanks(key, ranks));
+  rankInflight().set(key, work);
+  try {
+    return await work;
+  } finally {
+    rankInflight().delete(key);
+  }
 }

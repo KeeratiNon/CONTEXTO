@@ -30,10 +30,16 @@ export type SeedMeta = {
 };
 
 export type RankCache = {
-  puzzleId: string;
+  puzzleId?: string;
   secret: string;
   ranks: Record<string, number>;
   rankVersion?: number;
+};
+
+export type SecretClueCache = {
+  secret: string;
+  clues: string[];
+  cluesSource: "ai";
 };
 
 export type StoredPuzzle = {

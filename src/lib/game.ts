@@ -1,23 +1,36 @@
 import { nextCluePack } from "./clues";
 import { COPY } from "./copy";
-import { cluesMatchLang, langFromPuzzleId } from "./lang";
-import { GameError, MAX_HINTS } from "./types";
+import { todayDate } from "./date";
+import { langFromPuzzleId, type GameLang } from "./lang";
+import { GameError, MAX_HINTS, type GameMode, type PuzzleMeta, type StoredPuzzle } from "./types";
+import { getCachedRanks, requireSeedMeta } from "./vectordb";
 import { normalizeWord } from "./words";
-import { getPuzzleRanks, loadPuzzle, nearbyWords, savePuzzle } from "./puzzle";
-import type { StoredPuzzle } from "./types";
+import {
+  createUnlimitedPuzzle,
+  getOrCreateDailyPuzzle,
+  getPuzzleRanks,
+  hydratePuzzleClues,
+  loadPuzzle,
+  nearbyWords,
+  saveCluesForSecret,
+  savePuzzle,
+  toPuzzleMeta,
+} from "./puzzle";
 
-function hasPreparedClues(puzzle: StoredPuzzle): boolean {
-  // Only AI packs count — ignore old template/local caches
-  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
-  return (
-    puzzle.cluesSource === "ai" &&
-    puzzle.clues?.length === MAX_HINTS &&
-    cluesMatchLang(puzzle.clues, lang)
-  );
+const globalForHints = globalThis as unknown as {
+  __contextoHintInflight?: Map<string, Promise<string[]>>;
+};
+
+function hintInflight() {
+  if (!globalForHints.__contextoHintInflight) {
+    globalForHints.__contextoHintInflight = new Map();
+  }
+  return globalForHints.__contextoHintInflight;
 }
 
-export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
-  if (hasPreparedClues(puzzle) && puzzle.clues) return puzzle.clues;
+async function generatePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
+  const existing = hydratePuzzleClues(puzzle);
+  if (existing) return existing;
 
   const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
   const pack = await nextCluePack({
@@ -28,7 +41,55 @@ export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]
   puzzle.clues = pack.planned;
   puzzle.cluesSource = pack.source;
   savePuzzle(puzzle);
+  saveCluesForSecret(puzzle.secret, lang, pack.planned);
   return pack.planned;
+}
+
+export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
+  const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
+  const key = `${lang}:${puzzle.secret}`;
+  const pending = hintInflight().get(key);
+  if (pending) return pending;
+
+  const work = generatePuzzleClues(puzzle);
+  hintInflight().set(key, work);
+  try {
+    return await work;
+  } finally {
+    hintInflight().delete(key);
+  }
+}
+
+/** Start-game flow: vectors → secret → hints + ranks → ready to play. */
+export async function startGame(
+  mode: GameMode,
+  date?: string,
+  lang: GameLang = "en",
+): Promise<PuzzleMeta> {
+  const seed = requireSeedMeta(lang);
+  const puzzle =
+    mode === "unlimited"
+      ? createUnlimitedPuzzle(lang)
+      : getOrCreateDailyPuzzle(date ?? todayDate(), lang);
+
+  const plannedPromise = preparePuzzleClues(puzzle).catch((error) => {
+    console.warn(
+      "[hints] startGame prepare failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return hydratePuzzleClues(puzzle) ?? [];
+  });
+
+  const [, planned] = await Promise.all([
+    getCachedRanks(puzzle.id, puzzle.secret),
+    plannedPromise,
+  ]);
+
+  return toPuzzleMeta(
+    puzzle,
+    seed.vocabSize,
+    planned.length === MAX_HINTS ? planned : undefined,
+  );
 }
 
 export async function submitGuess(puzzleId: string, rawWord: string) {
@@ -73,14 +134,15 @@ export async function submitHint(
   let plannedClues = planned.map((clue) => clue.trim()).filter(Boolean);
 
   if (plannedClues.length !== MAX_HINTS) {
-    if (!hasPreparedClues(puzzle)) {
+    const resolved = hydratePuzzleClues(puzzle);
+    if (!resolved) {
       throw new GameError(
         "hint_unavailable",
         lang === "th" ? "คำใบ้ยังไม่พร้อม" : "Hints are not ready yet.",
         503,
       );
     }
-    plannedClues = puzzle.clues!;
+    plannedClues = resolved;
   }
 
   return {

@@ -231,7 +231,9 @@ export function Game() {
     document.documentElement.classList.toggle("lang-th", storedLang === "th");
     if (!localStorage.getItem(HELP_KEY)) setModal("help");
     void loadPuzzle("daily", storedLang);
-  }, [loadPuzzle]);
+    // Mount-only: loadPuzzle identity changes with copy/lang and would refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggleTheme() {
     const next = !dark;
@@ -478,7 +480,9 @@ export function Game() {
       ) : bootLoading ? (
         <div className="boot-screen" aria-busy="true" aria-live="polite">
           <div className="boot-orb" />
-          <p className="boot-title">{t.thinkingHint}</p>
+          <p className="boot-title">
+            {hintsPreparing && !loadingPuzzle ? t.thinkingHint : t.preparingGame}
+          </p>
         </div>
       ) : !hintsReady && !over ? (
         <div className="boot-screen">

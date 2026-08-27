@@ -10,6 +10,7 @@ export function pathsFor(lang: GameLang) {
     lancedbDir: path.join(root, "lancedb"),
     ranksDir: path.join(root, "ranks"),
     puzzlesDir: path.join(root, "puzzles"),
+    cluesDir: path.join(root, "clues"),
     modelsDir: path.join(root, "models"),
     rawDir: path.join(root, "raw"),
     metaPath: path.join(root, "meta.json"),
