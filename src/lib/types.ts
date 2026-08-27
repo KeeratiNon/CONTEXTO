@@ -18,6 +18,7 @@ export type PuzzleMeta = {
   date?: string;
   gameNumber?: number;
   vocabSize: number;
+  secret: string;
   plannedClues?: string[];
 };
 

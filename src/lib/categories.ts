@@ -107,6 +107,10 @@ function loadThaiSenses(): Map<string, WordSense> {
     if (categories.length || synsets.length) map.set(word, { categories, synsets });
   }
 
+  for (const [word, categories] of Object.entries(CATEGORY_OVERRIDES_TH)) {
+    map.set(word, { categories, synsets: [] });
+  }
+
   globalForSenses.__contextoSenses = map;
   return map;
 }
@@ -222,7 +226,110 @@ export function sharesAnyCategory(secretCats: string[], wordCats: string[]): boo
   );
 }
 
-export function relatednessScore(secret: WordSense, word: string, other: WordSense): number {
+type MeaningCluster = {
+  weight: number;
+  test?: RegExp;
+  words?: Set<string>;
+};
+
+const MEANING_CLUSTERS_TH: MeaningCluster[] = [
+  { weight: 0.35, test: /(?<!สิน)ค้า(?!ง)|ขายของ|คนขาย|หาบเร่|แผงลอย|แม่ขาย|ค้าขาย|ตลาด/ },
+  { weight: 0.3, test: /ครู|อาจารย์|นักเรียน|นักศึกษา|โรงเรียน/ },
+  { weight: 0.3, test: /หมอ|พยาบาล|คนไข้|โรงพยาบาล|แพทย์/ },
+  { weight: 0.25, test: /ตำรวจ|ทหาร|ทนาย|ศาล|ผู้พิพากษา/ },
+  { weight: 0.3, test: /^(พ่อ|แม่|ลูก|ปู่|ย่า|ตา|ยาย|พี่|น้อง)(ชาย|สาว|หญิง)?$/ },
+  { weight: 0.28, words: new Set(["ยำ", "ส้มตำ", "ลาบ", "น้ำตก", "ข้าวยำ"]) },
+  { weight: 0.22, words: new Set(["แกง", "แกงจืด", "แกงส้ม", "ต้มยำ", "ต้มข่า"]) },
+  { weight: 0.26, words: new Set(["โจ๊ก", "ข้าวต้ม", "ข้าวผัด", "ข้าว", "ข้าวเหนียว", "ข้าวสวย", "ข้าวแกง", "กับข้าว"]) },
+];
+
+function inMeaningCluster(word: string, cluster: MeaningCluster): boolean {
+  if (cluster.words?.has(word)) return true;
+  if (cluster.test?.test(word)) return true;
+  return false;
+}
+
+export const BLOCKED_WORDS_TH = new Set(["นิโกร"]);
+export const WN_RELATED_BOOST = 0.36;
+
+const globalForNeighbors = globalThis as unknown as {
+  __contextoWnNeighbors?: Map<string, Set<string>>;
+};
+
+function loadWnNeighbors(): Map<string, Set<string>> {
+  if (globalForNeighbors.__contextoWnNeighbors) return globalForNeighbors.__contextoWnNeighbors;
+  const map = new Map<string, Set<string>>();
+  const file = pathsFor("th").wnNeighborsPath;
+  if (!fs.existsSync(file)) {
+    globalForNeighbors.__contextoWnNeighbors = map;
+    return map;
+  }
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string[]>;
+  for (const [word, others] of Object.entries(raw)) {
+    map.set(word, new Set(others));
+  }
+  globalForNeighbors.__contextoWnNeighbors = map;
+  return map;
+}
+
+export function wnRelatedBoost(secret: string, word: string): number {
+  if (!secret || !word || secret === word) return 0;
+  return loadWnNeighbors().get(secret)?.has(word) ? WN_RELATED_BOOST : 0;
+}
+
+/** WordNet marks ซอมบี้ as food (zombie cocktail). In Thai it is the undead. */
+const CATEGORY_OVERRIDES_TH: Record<string, string[]> = {
+  ซอมบี้: ["people"],
+  แชมเปญ: ["drink"],
+};
+
+export function clusterBoost(secret: string, word: string): number {
+  if (!secret || !word || secret === word) return 0;
+  let best = 0;
+  for (const cluster of MEANING_CLUSTERS_TH) {
+    if (inMeaningCluster(secret, cluster) && inMeaningCluster(word, cluster)) {
+      best = Math.max(best, cluster.weight);
+    }
+  }
+  return best;
+}
+
+const FAR_CATEGORIES: Record<string, Set<string>> = {
+  people: new Set(["fruit", "vegetable", "animal", "body", "color", "food", "drink"]),
+  food: new Set(["people", "body", "animal", "place", "vehicle", "clothing"]),
+  fruit: new Set(["people", "body", "animal", "vehicle", "clothing"]),
+  animal: new Set(["fruit", "vegetable", "people", "body", "clothing"]),
+  body: new Set(["food", "fruit", "animal", "place", "vehicle"]),
+};
+
+export function categoryMismatchPenalty(secretCats: string[], wordCats: string[]): number {
+  if (!secretCats[0] || !wordCats[0]) return 0;
+  if (categoryOverlap(secretCats, wordCats) > 0) return 0;
+  return FAR_CATEGORIES[secretCats[0]]?.has(wordCats[0]) ? 0.16 : 0;
+}
+
+function colorFormBoost(
+  secretWord: string,
+  word: string,
+  secret: WordSense | undefined,
+  other: WordSense | undefined,
+): number {
+  const isColor =
+    secret?.categories.includes("color") || other?.categories.includes("color");
+  if (!isColor) return 0;
+  if (word === `สี${secretWord}` || secretWord === `สี${word}`) return 0.5;
+  return 0;
+}
+
+export function relatednessScore(
+  secretWord: string,
+  secret: WordSense | undefined,
+  word: string,
+  other: WordSense | undefined,
+): number {
+  const related = clusterBoost(secretWord, word) + wnRelatedBoost(secretWord, word);
+  const form = colorFormBoost(secretWord, word, secret, other);
+  if (!secret || !other) return related + form;
   const overlap = categoryOverlap(secret.categories, other.categories);
   const specific = isSpecificCategory(secret.categories[0]);
   const categoryBoost = (specific ? CATEGORY_BOOST : BROAD_CATEGORY_BOOST) * overlap;
@@ -231,5 +338,13 @@ export function relatednessScore(secret: WordSense, word: string, other: WordSen
       ? HYPERNYM_BOOST
       : BROAD_CATEGORY_BOOST
     : 0;
-  return categoryBoost + hypernym + SYNSET_BOOST * synsetOverlap(secret.synsets, other.synsets);
+  const mismatch = categoryMismatchPenalty(secret.categories, other.categories);
+  return (
+    related +
+    form +
+    categoryBoost +
+    hypernym +
+    SYNSET_BOOST * synsetOverlap(secret.synsets, other.synsets) -
+    mismatch
+  );
 }

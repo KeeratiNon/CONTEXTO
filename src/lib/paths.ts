@@ -18,6 +18,7 @@ export function pathsFor(lang: GameLang) {
     vocabMetaPath: path.join(root, "vocab-meta.json"),
     secretsPath: path.join(root, "secrets.txt"),
     categoriesPath: path.join(root, "thai-contexto-70k.jsonl"),
+    wnNeighborsPath: path.join(root, "wn-neighbors.json"),
     frequencyPath: path.join(root, "raw", lang === "th" ? "th_50k.txt" : "en_50k.txt"),
     thaiGlovePath: path.join(root, "raw", "th.glove.300d.top70k.txt"),
     thaiGloveGzipPath: path.join(root, "th.glove.300d.top70k.txt.gz"),

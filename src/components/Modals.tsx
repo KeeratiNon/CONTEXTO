@@ -9,15 +9,17 @@ function Overlay({
   title,
   children,
   onClose,
+  className,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   return (
     <div className="overlay" onClick={onClose} role="presentation">
       <div
-        className="modal"
+        className={className ? `modal ${className}` : "modal"}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -198,6 +200,40 @@ export function ConfirmGiveUp({
           </button>
         </div>
       </div>
+    </Overlay>
+  );
+}
+
+export function NearbyModal({
+  words,
+  loading,
+  error,
+  onClose,
+  lang = "en",
+}: {
+  words: Guess[];
+  loading: boolean;
+  error?: string;
+  onClose: () => void;
+  lang?: GameLang;
+}) {
+  const t = COPY[lang];
+  return (
+    <Overlay title={t.nearbyTitle} onClose={onClose} className="nearby-modal">
+      {loading ? (
+        <p className="calculating">{t.calculating}</p>
+      ) : error ? (
+        <p className="error">{error}</p>
+      ) : (
+        <ol className="nearby-list">
+          {words.map((item) => (
+            <li key={`${item.rank}-${item.word}`} className="nearby-row">
+              <span className="nearby-rank">{item.rank}</span>
+              <span className="nearby-word">{item.word}</span>
+            </li>
+          ))}
+        </ol>
+      )}
     </Overlay>
   );
 }

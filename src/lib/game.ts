@@ -162,3 +162,8 @@ export async function giveUp(puzzleId: string) {
     nearby: nearbyWords(ranks),
   };
 }
+
+export async function listNearby(puzzleId: string, limit = 500) {
+  const { ranks } = await getPuzzleRanks(puzzleId);
+  return { nearby: nearbyWords(ranks, limit) };
+}

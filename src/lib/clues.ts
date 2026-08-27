@@ -1,6 +1,15 @@
 import OpenAI from "openai";
 import { categoriesFor, categoryDisplayName } from "./categories";
-import { animalKindFor, englishNamesFor, fruitFactsFor, glossNamesOtherSecret, hintFactError, specificHints } from "./clue-traits";
+import {
+  animalKindFor,
+  englishNamesFor,
+  fruitFactsFor,
+  glossFactError,
+  hintFactError,
+  hintFactRejectMessage,
+  promptGuardFor,
+  specificHints,
+} from "./clue-traits";
 import { hintMatchesLang, type GameLang } from "./lang";
 import { GameError, MAX_HINTS } from "./types";
 
@@ -55,32 +64,23 @@ export function nearbyGuessWords(
   return out;
 }
 
-function hintsPassFactCheck(secret: string, hints: string[], lang: GameLang): boolean {
-  if (lang !== "th") return true;
-  const error = hintFactError(secret, hints, categoriesFor(secret, lang));
-  if (error) {
-    console.warn(`[hints] fact-check: ${error} rejected for ${secret}`);
-    return false;
-  }
-  return true;
-}
-
 function parseAiHintPack(
   raw: string,
   secret: string,
   blocked: string[],
-  _lang: GameLang,
-): { hints: string[] } | { error: string } {
-  const tryParse = (text: string): { hints: string[] } | { error: string } => {
+  lang: GameLang,
+): { hints: string[]; factError?: string } | { error: string } {
+  const cats = categoriesFor(secret, lang);
+  const tryParse = (
+    text: string,
+  ): { hints: string[]; factError?: string } | { error: string } => {
     try {
       const parsed = JSON.parse(text) as { hints?: unknown; meaning?: unknown };
       if (typeof parsed.meaning === "string" && parsed.meaning.trim()) {
         const meaning = parsed.meaning.trim();
         console.info(`[hints] model gloss: ${meaning}`);
-        const other = glossNamesOtherSecret(secret, meaning);
-        if (other) {
-          return { error: `gloss is ${meaning}, that is ${other} not ${secret}` };
-        }
+        const glossError = glossFactError(secret, meaning, cats);
+        if (glossError) return { error: glossError };
       }
       if (!Array.isArray(parsed.hints)) return { error: "missing hints array" };
       const hints = parsed.hints
@@ -100,20 +100,22 @@ function parseAiHintPack(
         if (cleaned.length >= MAX_HINTS) break;
         if (!hint || hint.length < 2) continue;
         if (containsTerm(hint, secret)) continue;
-        if (!hintMatchesLang(hint, _lang)) continue;
+        if (!hintMatchesLang(hint, lang)) continue;
         if (clueConflicts(hint, [...blocked, ...cleaned])) continue;
         cleaned.push(hint);
       }
       if (cleaned.length < MAX_HINTS) {
         return {
           error:
-            _lang === "en"
+            lang === "en"
               ? "hints must be English, not Thai"
               : "a hint named the secret, used English, or repeated a guess",
         };
       }
-      if (!hintsPassFactCheck(secret, cleaned, _lang)) {
-        return { error: "fact-check failed" };
+      const factError = lang === "th" ? hintFactError(secret, cleaned, cats) : null;
+      if (factError) {
+        console.warn(`[hints] fact-check: ${factError} rejected for ${secret}`);
+        return { hints: cleaned, factError: hintFactRejectMessage(factError, cleaned) };
       }
       return { hints: cleaned };
     } catch {
@@ -185,6 +187,7 @@ function buildCluePackPrompt(options: {
     : animal
       ? `This secret is a ${animal}. Do not describe a different animal class.`
       : "";
+  const guard = options.lang === "th" ? promptGuardFor(options.secret, cats) : "";
   const steer =
     closest && closest.rank <= 80
       ? `The player guessed ${closest.word} (#${closest.rank}). Do NOT describe that guess. Give traits true of the secret that distinguish it from ${closest.word}.`
@@ -198,11 +201,13 @@ function buildCluePackPrompt(options: {
     anchor || "Use accurate world knowledge for this exact spelling.",
     nameLine,
     identityLine,
+    guard,
     `Categories: ${categoryLine}`,
     `Guesses: ${nearbyLine}`,
     steer,
     "Every hint must be factually true of THIS secret only. False colors, seeds, shells, legs, wings, or venom are forbidden.",
-    "Do not copy traits from a similar fruit, animal, or nearby guess.",
+    "Do not copy traits from a similar fruit, animal, dish, or nearby guess.",
+    "Never write another dish or species name as a hint. Describe THIS spelling only.",
     "Hint 1 broad true property. Hint 2 true subtype. Hint 3 distinctive true trait, still unnamed.",
     "No guessed words. No empty labels.",
     options.rejectReason ? `REJECTED LAST ATTEMPT: ${options.rejectReason}` : "",
@@ -231,17 +236,18 @@ function groqClient(apiKey: string): OpenAI {
 }
 
 function groqModel(): string {
-  return process.env.GROQ_HINT_MODEL ?? "openai/gpt-oss-20b";
+  return process.env.GROQ_HINT_MODEL ?? "openai/gpt-oss-120b";
 }
 
 async function groqComplete(
   client: OpenAI,
   model: string,
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  temperature = 0.2,
 ): Promise<string | null> {
   const response = await client.chat.completions.create({
     model,
-    temperature: 0.2,
+    temperature,
     max_tokens: 400,
     messages,
     reasoning_effort: "low",
@@ -261,6 +267,7 @@ async function auditCluePackWithGroq(
   model: string,
   options: HintGenOptions,
   hints: string[],
+  why: string,
 ): Promise<string[] | null> {
   const cats = categoriesFor(options.secret, options.lang);
   const started = Date.now();
@@ -277,25 +284,30 @@ async function auditCluePackWithGroq(
           `Secret word: ${options.secret}`,
           `Language: ${options.lang === "th" ? "Thai" : "English"}`,
           `Categories: ${cats.join(", ") || "unknown"}`,
-          `Hints to check: ${JSON.stringify(hints)}`,
-          "Is EVERY hint factually true of THIS exact spelling — not a similar word?",
-          "If all true, return {\"ok\":true,\"hints\":[same three hints]}.",
-          "If any is false, return {\"ok\":false,\"why\":\"short reason\",\"hints\":[\"true1\",\"true2\",\"true3\"]} with 3 corrected true hints.",
+          promptGuardFor(options.secret, cats),
+          `These hints failed a fact-check: ${JSON.stringify(hints)}`,
+          `Reason: ${why}`,
+          "Write 3 corrected hints that are factually true of THIS exact spelling — not a similar word.",
+          'Return {"ok":false,"why":"short reason","hints":["true1","true2","true3"]}.',
           options.lang === "th"
             ? "Corrected hints must be Thai script only, under 16 characters. No English."
             : "Corrected hints must be English only, under 6 words. No Thai script.",
           "Do not use the secret or a translation of it.",
-        ].join("\n"),
+        ].filter(Boolean).join("\n"),
       },
     ]);
     if (!raw) return null;
     const parsed = parseAiHintPack(raw, options.secret, options.blocked, options.lang);
-    if ("hints" in parsed) {
-      console.info(`[hints] groq audit ok in ${Date.now() - started}ms`);
-      return parsed.hints;
+    if ("error" in parsed) {
+      console.info(`[hints] groq audit failed in ${Date.now() - started}ms: ${parsed.error}`);
+      return null;
     }
-    console.info(`[hints] groq audit failed in ${Date.now() - started}ms: ${parsed.error}`);
-    return null;
+    if (parsed.factError) {
+      console.info(`[hints] groq audit still false in ${Date.now() - started}ms: ${parsed.factError}`);
+      return null;
+    }
+    console.info(`[hints] groq audit ok in ${Date.now() - started}ms`);
+    return parsed.hints;
   } catch (error) {
     console.warn(
       `[hints] groq audit error in ${Date.now() - started}ms:`,
@@ -305,32 +317,41 @@ async function auditCluePackWithGroq(
   }
 }
 
+const RETRY_TEMPERATURE = [0.2, 0.4, 0.55, 0.7];
+
 async function generateCluePackWithGroq(options: HintGenOptions): Promise<string[] | null> {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) return null;
 
   const model = groqModel();
   const client = groqClient(apiKey);
+  const language = options.lang === "th" ? "Thai" : "English";
 
   let rejectReason = options.rejectReason;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= RETRY_TEMPERATURE.length; attempt += 1) {
     const started = Date.now();
+    const temperature = RETRY_TEMPERATURE[attempt - 1] ?? 0.5;
     try {
-      const raw = await groqComplete(client, model, [
-        {
-          role: "system",
-          content:
-            `Identify the exact ${options.lang === "th" ? "Thai" : "English"} word, then return only JSON with keys meaning and hints. Hints must be in ${options.lang === "th" ? "Thai" : "English"} only. Never put the secret in a hint. False physical traits are forbidden.`,
-        },
-        {
-          role: "user",
-          content: buildCluePackPrompt({ ...options, rejectReason }),
-        },
-      ]);
+      const raw = await groqComplete(
+        client,
+        model,
+        [
+          {
+            role: "system",
+            content:
+              `Identify the exact ${language} spelling, not a similar-looking word. Return only JSON with keys meaning and hints. Hints must be in ${language} only. Never put the secret in a hint. False physical traits are forbidden.`,
+          },
+          {
+            role: "user",
+            content: buildCluePackPrompt({ ...options, rejectReason }),
+          },
+        ],
+        temperature,
+      );
       const parsed = raw
         ? parseAiHintPack(raw, options.secret, options.blocked, options.lang)
         : { error: "empty response" };
-      if (!("hints" in parsed)) {
+      if ("error" in parsed) {
         rejectReason = parsed.error;
         console.info(
           `[hints] groq ${model} attempt ${attempt} failed in ${Date.now() - started}ms: ${parsed.error}`,
@@ -338,15 +359,24 @@ async function generateCluePackWithGroq(options: HintGenOptions): Promise<string
         continue;
       }
 
-      const audited = await auditCluePackWithGroq(client, model, options, parsed.hints);
-      const hints = audited ?? parsed.hints;
-      if (!hintsPassFactCheck(options.secret, hints, options.lang)) {
-        rejectReason = "fact-check failed after audit";
-        console.info(`[hints] groq ${model} attempt ${attempt} failed local check`);
-        continue;
+      if (!parsed.factError) {
+        console.info(`[hints] groq ${model} ok in ${Date.now() - started}ms`);
+        return parsed.hints;
       }
-      console.info(`[hints] groq ${model} ok in ${Date.now() - started}ms`);
-      return hints;
+
+      const audited = await auditCluePackWithGroq(
+        client,
+        model,
+        options,
+        parsed.hints,
+        parsed.factError,
+      );
+      if (audited) {
+        console.info(`[hints] groq ${model} repaired in ${Date.now() - started}ms`);
+        return audited;
+      }
+      rejectReason = parsed.factError;
+      console.info(`[hints] groq ${model} attempt ${attempt} failed local check`);
     } catch (error) {
       console.warn(
         `[hints] groq attempt ${attempt} failed in ${Date.now() - started}ms:`,

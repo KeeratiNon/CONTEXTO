@@ -19,8 +19,7 @@ function scoreWord(
 ) {
   let dot = 0;
   for (let i = 0; i < secretVec.length; i += 1) dot += secretVec[i] * wordVec[i];
-  const relatedness =
-    secretSense && wordSense ? relatednessScore(secretSense, word, wordSense) : 0;
+  const relatedness = relatednessScore(secret, secretSense, word, wordSense);
   return dot + relatedness;
 }
 

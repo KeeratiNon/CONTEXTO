@@ -4,7 +4,8 @@ import { pathsFor } from "./paths";
 import { langFromPuzzleId, type GameLang } from "./lang";
 import type { RankCache, SeedMeta } from "./types";
 import { GameError } from "./types";
-import { loadWordSenses, relatednessScore } from "./categories";
+import { loadWordSenses, relatednessScore, BLOCKED_WORDS_TH } from "./categories";
+import { rerankTopWords } from "./rerank";
 
 type WordRow = {
   word: string;
@@ -62,7 +63,7 @@ export async function getWordsTable(lang: GameLang) {
   return db.openTable("words");
 }
 
-export const RANK_VERSION = 6;
+export const RANK_VERSION = 10;
 
 export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<string, number>> {
   const meta = requireSeedMeta(lang);
@@ -79,6 +80,7 @@ export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<
   for (const row of rows) {
     const vector = toNumberArray(row.vector);
     if (!vector) continue;
+    if (BLOCKED_WORDS_TH.has(row.word)) continue;
     if (row.word === secret) {
       secretVector = vector;
       continue;
@@ -99,16 +101,20 @@ export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<
       dot += query[i] * row.vector[i];
     }
     const otherSense = senses.get(row.word);
-    const relatedness =
-      secretSense && otherSense ? relatednessScore(secretSense, row.word, otherSense) : 0;
+    const relatedness = relatednessScore(secret, secretSense, row.word, otherSense);
     return { word: row.word, score: dot + relatedness };
   });
   scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word, lang === "th" ? "th" : "en"));
+  const ordered = await rerankTopWords(
+    secret,
+    lang,
+    scored.map((row) => row.word),
+  );
 
   const ranks = new Map<string, number>();
   ranks.set(secret, 1);
-  scored.forEach((row, index) => {
-    if (!ranks.has(row.word)) ranks.set(row.word, index + 2);
+  ordered.forEach((word, index) => {
+    if (!ranks.has(word)) ranks.set(word, index + 2);
   });
   return ranks;
 }

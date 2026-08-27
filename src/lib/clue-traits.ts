@@ -394,6 +394,9 @@ const ANIMAL_KIND_TH: Record<string, AnimalKind> = {
 const ANIMAL_TRAIT = /ไม่มีขา|มีเกล็ด|มีพิษ|เลื่อย|เลื้อย|บินได้|มีปีก|มีขน|เป็นนก|เป็นงู|มีครีบ|ไม่มีปีก/;
 const FRUIT_TRAIT = /เปลือกหนา|เปลือกแข็ง|เปลือกหนาม|เปลือกบาง|เมล็ดขาว|เมล็ดสีขาว|เมล็ดดำ|เมล็ดสีดำ|ผลไม้สี|เนื้อแดง|สุกแล้ว/;
 const PERSON_OR_BODY_AS_FRUIT = /เปลือกหนา|เมล็ดขาว|เป็นผลไม้|มีปีก|มีเกล็ด|เลื้อย/;
+const CALLS_IT_FRUIT = /(?<!ไม่ใช่)(?:เป็น)?ผลไม้/;
+const HAS_PEEL = /มีเปลือก|เปลือกบาง|เปลือกหนา|เปลือกแข็ง/;
+const HAS_SEED = /เมล็ดเล็ก|เมล็ดใหญ่|มีเมล็ด|เมล็ดขาว|เมล็ดดำ/;
 
 export function fruitFactsFor(secret: string): FruitFacts | null {
   return FRUIT_FACTS_TH[secret] ?? null;
@@ -428,6 +431,15 @@ const SECRET_ENGLISH: Record<string, string[]> = {
   เงาะ: ["rambutan"],
   เสาวรส: ["passion fruit", "passionfruit"],
   แตงโม: ["watermelon"],
+  ฝอยทอง: ["foi thong", "golden egg threads"],
+  ทองหยิบ: ["thong yip"],
+  ทองหยอด: ["thong yod"],
+  ฟักทอง: ["pumpkin"],
+  ยำ: ["yam", "thai spicy salad"],
+  บะหมี่: ["ba mee", "egg noodles"],
+  ขนมจีน: ["khanom chin"],
+  โจ๊ก: ["congee", "rice porridge", "jook"],
+  เทา: ["gray", "grey"],
   ห่าน: ["goose"],
   เป็ด: ["duck"],
   นก: ["bird"],
@@ -459,6 +471,159 @@ export function glossNamesOtherSecret(secret: string, meaning: string): string |
     if (names.some((name) => name.length >= 4 && text.includes(name))) return word;
   }
   return null;
+}
+
+type Lookalike = {
+  other: string;
+  otherMeaning: string;
+  thisMeaning: string;
+};
+
+const LOOKALIKES_TH: Record<string, Lookalike> = {
+  ฝอยทอง: {
+    other: "ฟักทอง",
+    otherMeaning: "pumpkin",
+    thisMeaning: "Thai dessert of thin golden egg-yolk threads in syrup",
+  },
+  ฟักทอง: {
+    other: "ฝอยทอง",
+    otherMeaning: "foi thong dessert",
+    thisMeaning: "pumpkin / winter squash",
+  },
+  ยำ: {
+    other: "ยำสาหร่าย",
+    otherMeaning: "seaweed salad",
+    thisMeaning:
+      "Thai spicy salad (yam) tossed with lime, fish sauce, chili, and shallot — not seaweed salad and not soy-sauce based",
+  },
+  บะหมี่: {
+    other: "ขนมจีน",
+    otherMeaning: "khanom chin",
+    thisMeaning:
+      "Thai wheat egg noodles (ba-mi / wonton noodles), not fermented rice noodles and not khanom chin",
+  },
+  ขนมจีน: {
+    other: "บะหมี่",
+    otherMeaning: "egg noodles",
+    thisMeaning: "Thai fermented rice noodles (khanom chin), not wheat egg noodles",
+  },
+};
+
+const DISH_FALSE_TRAITS: Record<string, RegExp> = {
+  ยำ: /สาหร่าย|ซีอิ๊ว|ซอสถั่วเหลือง|น้ำเชื่อม|เป็นของหวาน/,
+  บะหมี่: /ขนมจีน|เส้นหมี่ขาว|หมักข้าว/,
+  ขนมจีน: /บะหมี่|ไข่เจียวเส้น|แป้งสาลี/,
+};
+
+const DISH_GLOSS_FAIL: Record<string, RegExp> = {
+  ยำ: /seaweed|wakame|soy sauce/,
+  บะหมี่: /khanom chin|rice noodle|vermicelli/,
+};
+
+const NAMED_OTHER_DISH = new Set([
+  "ขนมจีน",
+  "บะหมี่",
+  "ก๋วยเตี๋ยว",
+  "ก๋วยจั๊บ",
+  "ผัดไทย",
+  "ส้มตำ",
+  "ยำ",
+  "ลาบ",
+  "ฝอยทอง",
+  "ทองหยิบ",
+  "ทองหยอด",
+  "ข้าวมันไก่",
+  "โจ๊ก",
+  "เกี๊ยว",
+]);
+
+const FRUIT_GLOSS =
+  /\b(fruits?|grape|mango|banana|papaya|apple|berry|melon|longan|rambutan|guava|watermelon|jackfruit|durian|lychee|pomegranate|pumpkin)\b/i;
+
+export function glossFactError(
+  secret: string,
+  meaning: string,
+  categories: string[],
+): string | null {
+  const other = glossNamesOtherSecret(secret, meaning);
+  if (other) return `gloss is ${meaning}, that is ${other} not ${secret}`;
+
+  const text = meaning.trim().toLowerCase();
+  if (!text) return null;
+  const lookalike = LOOKALIKES_TH[secret];
+  if (lookalike && text.includes(lookalike.otherMeaning.toLowerCase().split(" / ")[0]!)) {
+    return `gloss describes ${lookalike.other} (${lookalike.otherMeaning}), not ${secret}`;
+  }
+  const dishGloss = DISH_GLOSS_FAIL[secret];
+  if (dishGloss && dishGloss.test(text)) {
+    return `gloss describes the wrong dish for ${secret} (${meaning})`;
+  }
+  if (!categories.includes("fruit") && !categories.includes("vegetable") && FRUIT_GLOSS.test(text)) {
+    return `gloss calls ${secret} a fruit (${meaning})`;
+  }
+  return null;
+}
+
+/** Prompt-only identity rules. Groq still writes the hints. */
+export function promptGuardFor(secret: string, categories: string[]): string {
+  const lines: string[] = [];
+  const set = new Set(categories);
+  const primary = categories[0];
+
+  if (set.has("food") && !set.has("fruit") && !set.has("vegetable")) {
+    lines.push(
+      "This secret is prepared food (dish, dessert, snack, or ingredient), not a raw fruit or vegetable.",
+      "Forbidden in meaning and hints: calling it fruit; describing peel, rind, or seeds as if it grew on a plant. Do not use ผลไม้.",
+    );
+  }
+  if (set.has("fruit")) {
+    lines.push("This secret is a fruit. Use only true peel/seed/flesh traits for THIS fruit.");
+  }
+  if (set.has("vegetable") && !set.has("fruit")) {
+    lines.push("This secret is a vegetable, not a sweet fruit. Do not call it ผลไม้.");
+  }
+  if (set.has("animal") && !set.has("food")) {
+    lines.push("This secret is an animal. Do not describe plants, peel, or seeds.");
+  }
+  if (primary === "people") {
+    lines.push("This secret is a person or role, not food, fruit, or an animal.");
+  }
+  if (primary === "body") {
+    lines.push("This secret is a body part, not food or fruit.");
+  }
+  if (primary === "place" || primary === "city_country") {
+    lines.push("This secret is a place, not a living thing or food item.");
+  }
+
+  const lookalike = LOOKALIKES_TH[secret];
+  if (lookalike) {
+    lines.push(
+      `Exact sense of this spelling: ${lookalike.thisMeaning}.`,
+      `Do NOT describe ${lookalike.other} (${lookalike.otherMeaning}). Similar spelling, different word.`,
+    );
+  }
+  return lines.join(" ");
+}
+
+const FACT_REJECT_HINT: Record<string, string> = {
+  "non-fruit-as-fruit":
+    "You described a fruit. This secret is not a fruit. No ผลไม้, peel, or seeds.",
+  "food-as-produce":
+    "You described produce (peel and seeds). This is prepared food, not a fruit or vegetable.",
+  "food-as-animal": "You described an animal. This prepared food is not a living animal.",
+  "plant-as-animal": "You described an animal. This secret is a plant.",
+  "animal-as-fruit": "You described a fruit. This secret is an animal.",
+  "person-as-fruit-or-animal": "You described a plant or animal. This secret is a person.",
+  "body-as-other": "You described food, fruit, or an animal. This secret is a body part.",
+  "false-dish-trait":
+    "You described the wrong dish. Use traits true of THIS exact spelling, not a similar salad or topping.",
+  "names-other-dish":
+    "A hint named a different dish. Describe THIS secret with true traits only. Never write another dish's name.",
+};
+
+export function hintFactRejectMessage(error: string, hints: string[]): string {
+  const detail = FACT_REJECT_HINT[error] ?? `Fact-check failed (${error}).`;
+  return `${detail} Bad hints: ${hints.join(" / ")}`;
 }
 
 export function animalKindFor(secret: string): AnimalKind | null {
@@ -530,6 +695,15 @@ export function hintFactError(
   if (animalErr) return animalErr;
 
   const primary = categories[0];
+  const isFruit = categories.includes("fruit");
+  const isProduce = isFruit || categories.includes("vegetable");
+  if (!isFruit && CALLS_IT_FRUIT.test(joined)) return "non-fruit-as-fruit";
+  if (primary === "food" && !isProduce && HAS_PEEL.test(joined) && HAS_SEED.test(joined)) {
+    return "food-as-produce";
+  }
+  if (primary === "food" && !categories.includes("animal") && ANIMAL_TRAIT.test(joined)) {
+    return "food-as-animal";
+  }
   if ((primary === "fruit" || primary === "vegetable") && ANIMAL_TRAIT.test(joined)) {
     return "plant-as-animal";
   }
@@ -542,6 +716,12 @@ export function hintFactError(
   if (!FRUIT_FACTS_TH[secret] && /เปลือกแข็ง|เปลือกหนาม|เปลือกหนา/.test(joined)) {
     const thick = new Set(["ทุเรียน", "มะพร้าว", "สับปะรด", "แตงโม", "เงาะ", "ลิ้นจี่", "มังคุด", "ขนุน", "เสาวรส", "สละ"]);
     if (!thick.has(secret) && primary !== "object") return "hard-shell";
+  }
+  const dishFail = DISH_FALSE_TRAITS[secret];
+  if (dishFail && dishFail.test(joined)) return "false-dish-trait";
+  for (const hint of hints) {
+    const named = hint.trim();
+    if (NAMED_OTHER_DISH.has(named) && named !== secret) return "names-other-dish";
   }
   return null;
 }

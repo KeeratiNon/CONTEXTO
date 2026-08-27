@@ -31,6 +31,8 @@ type Copy = {
   preparingGame: string;
   hintsNotReady: string;
   retryHints: string;
+  nearby: string;
+  nearbyTitle: string;
 };
 
 export const COPY: Record<GameLang, Copy> = {
@@ -65,6 +67,8 @@ export const COPY: Record<GameLang, Copy> = {
     preparingGame: "getting ready...",
     hintsNotReady: "Hints are still preparing...",
     retryHints: "Try again",
+    nearby: "Nearby",
+    nearbyTitle: "Closest 500 words",
   },
   th: {
     daily: "รายวัน",
@@ -97,5 +101,7 @@ export const COPY: Record<GameLang, Copy> = {
     preparingGame: "กำลังเตรียมเกม...",
     hintsNotReady: "กำลังเตรียมคำใบ้ รอสักครู่...",
     retryHints: "ลองอีกครั้ง",
+    nearby: "คำใกล้เคียง",
+    nearbyTitle: "คำใกล้เคียง 1–500",
   },
 };

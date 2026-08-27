@@ -370,6 +370,10 @@ html.dark .hint-tag {
   margin: 0 0 12px;
 }
 
+.actions button.span-2 {
+  grid-column: 1 / -1;
+}
+
 .clue-rail {
   position: sticky;
   top: 0;
@@ -452,6 +456,48 @@ html.dark .hint-tag {
   border-radius: 16px;
   box-shadow: var(--shadow);
   padding: 20px 20px 24px;
+}
+
+.modal.nearby-modal {
+  width: min(480px, 100%);
+  max-height: min(85vh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+
+.nearby-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-height: min(70vh, 600px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.nearby-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.nearby-row:last-child {
+  border-bottom: 0;
+}
+
+.nearby-rank {
+  flex: 0 0 3rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.nearby-word {
+  font-weight: 650;
 }
 
 .modal-head {

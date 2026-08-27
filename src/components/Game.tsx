@@ -6,6 +6,7 @@ import {
   GaveUpModal,
   HowToPlay,
   Menu,
+  NearbyModal,
   WinModal,
 } from "@/components/Modals";
 import { cluesMatchLang, langFromPuzzleId } from "@/lib/lang";
@@ -24,7 +25,7 @@ type SaveState = {
   plannedClues?: string[];
 };
 
-type Modal = "help" | "menu" | "win" | "gaveup" | "confirm-giveup" | null;
+type Modal = "help" | "menu" | "win" | "gaveup" | "confirm-giveup" | "nearby" | null;
 
 const THEME_KEY = "contexto-theme";
 const HELP_KEY = "contexto-seen-help";
@@ -68,6 +69,9 @@ export function Game() {
   const [modal, setModal] = useState<Modal>(null);
   const [flashWord, setFlashWord] = useState<string | null>(null);
   const [pendingWord, setPendingWord] = useState<string | null>(null);
+  const [nearby, setNearby] = useState<Guess[]>([]);
+  const [nearbyBusy, setNearbyBusy] = useState(false);
+  const [nearbyError, setNearbyError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const over = won || gaveUp;
@@ -180,11 +184,12 @@ export function Game() {
         saved?.clues?.length && cluesMatchLang(saved.clues, puzzleLang)
           ? saved.clues
           : [];
+      const nextSecret = meta.secret;
+      setSecret(nextSecret);
       if (saved && saved.puzzleId === meta.id) {
         setGuesses(saved.guesses);
         setWon(saved.won);
         setGaveUp(saved.gaveUp);
-        setSecret(saved.secret ?? null);
         setClues(savedClues);
         setPlannedClues(planned);
         if (saved.won) setModal("win");
@@ -192,12 +197,13 @@ export function Game() {
         setGuesses([]);
         setWon(false);
         setGaveUp(false);
-        setSecret(null);
         setClues([]);
         setPlannedClues(planned);
       }
+      setNearby([]);
+      setNearbyError("");
 
-      if (!alreadyOver && planned.length !== MAX_HINTS) {
+      if (!alreadyOver && serverPlanned.length !== MAX_HINTS) {
         setHintsPreparing(true);
         await ensureHints(meta.id);
       }
@@ -262,6 +268,8 @@ export function Game() {
     setSecret(null);
     setClues([]);
     setPlannedClues([]);
+    setNearby([]);
+    setNearbyError("");
     await loadPuzzle(mode, nextLang);
   }
 
@@ -422,6 +430,31 @@ export function Game() {
     }
   }
 
+  async function onNearby() {
+    if (!puzzle) return;
+    setModal("nearby");
+    if (nearby.length) return;
+    setNearbyBusy(true);
+    setNearbyError("");
+    try {
+      const response = await fetch("/api/nearby", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ puzzleId: puzzle.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setNearbyError(data.message || t.networkError);
+        return;
+      }
+      setNearby(Array.isArray(data.nearby) ? data.nearby : []);
+    } catch {
+      setNearbyError(t.networkError);
+    } finally {
+      setNearbyBusy(false);
+    }
+  }
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -559,6 +592,13 @@ export function Game() {
                 </button>
               </>
             )}
+            <button
+              className="span-2"
+              onClick={() => void onNearby()}
+              disabled={!puzzle || nearbyBusy}
+            >
+              {t.nearby}
+            </button>
           </div>
 
           <form className="guess-form" onSubmit={onSubmit}>
@@ -566,7 +606,7 @@ export function Game() {
               ref={inputRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={over ? t.gameOver : t.typeWord}
+              placeholder={secret ?? t.typeWord}
               autoComplete="off"
               autoCapitalize="none"
               autoCorrect="off"
@@ -662,6 +702,15 @@ export function Game() {
             setModal(null);
             void onGiveUp();
           }}
+        />
+      ) : null}
+      {modal === "nearby" ? (
+        <NearbyModal
+          lang={lang}
+          words={nearby}
+          loading={nearbyBusy}
+          error={nearbyError || undefined}
+          onClose={() => setModal(null)}
         />
       ) : null}
     </div>

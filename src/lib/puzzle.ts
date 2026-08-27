@@ -6,6 +6,8 @@ import { cluesMatchLang, dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } f
 import { gameNumberForDate } from "./date";
 import { loadSecrets, pickDailySecret, pickUnlimitedSecret } from "./words";
 import { getCachedRanks, requireSeedMeta } from "./vectordb";
+import { categoriesFor } from "./categories";
+import { hintFactError } from "./clue-traits";
 
 function puzzlePath(id: string, lang: GameLang): string {
   return `${pathsFor(lang).puzzlesDir}/${id.replaceAll("/", "_")}.json`;
@@ -30,9 +32,13 @@ export function usableAiClues(
   clues: string[] | undefined,
   source: StoredPuzzle["cluesSource"],
   lang: GameLang,
+  secret?: string,
 ): string[] | null {
   if (source !== "ai" || clues?.length !== MAX_HINTS) return null;
   if (!cluesMatchLang(clues, lang)) return null;
+  if (secret && lang === "th" && hintFactError(secret, clues, categoriesFor(secret, lang))) {
+    return null;
+  }
   return clues;
 }
 
@@ -41,7 +47,7 @@ function readCluesForSecret(secret: string, lang: GameLang): string[] | null {
   if (!fs.existsSync(file)) return null;
   const cached = JSON.parse(fs.readFileSync(file, "utf8")) as SecretClueCache;
   if (cached.secret !== secret) return null;
-  return usableAiClues(cached.clues, cached.cluesSource, lang);
+  return usableAiClues(cached.clues, cached.cluesSource, lang, secret);
 }
 
 export function saveCluesForSecret(secret: string, lang: GameLang, clues: string[]) {
@@ -58,7 +64,7 @@ function findCluesInPuzzles(secret: string, lang: GameLang): string[] | null {
     if (!name.endsWith(".json")) continue;
     const puzzle = JSON.parse(fs.readFileSync(`${dir}/${name}`, "utf8")) as StoredPuzzle;
     if (puzzle.secret !== secret) continue;
-    const clues = usableAiClues(puzzle.clues, puzzle.cluesSource, lang);
+    const clues = usableAiClues(puzzle.clues, puzzle.cluesSource, lang, puzzle.secret);
     if (clues) return clues;
   }
   return null;
@@ -67,7 +73,7 @@ function findCluesInPuzzles(secret: string, lang: GameLang): string[] | null {
 /** Reuse AI clues already generated for this secret, even from another puzzle. */
 export function hydratePuzzleClues(puzzle: StoredPuzzle): string[] | null {
   const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
-  const own = usableAiClues(puzzle.clues, puzzle.cluesSource, lang);
+  const own = usableAiClues(puzzle.clues, puzzle.cluesSource, lang, puzzle.secret);
   if (own) {
     if (!readCluesForSecret(puzzle.secret, lang)) saveCluesForSecret(puzzle.secret, lang, own);
     return own;
@@ -145,9 +151,10 @@ export function toPuzzleMeta(
     date: puzzle.date,
     gameNumber: puzzle.date ? gameNumberForDate(puzzle.date) : undefined,
     vocabSize,
+    secret: puzzle.secret,
     plannedClues:
       plannedClues ??
-      usableAiClues(puzzle.clues, puzzle.cluesSource, lang) ??
+      usableAiClues(puzzle.clues, puzzle.cluesSource, lang, puzzle.secret) ??
       undefined,
   };
 }
