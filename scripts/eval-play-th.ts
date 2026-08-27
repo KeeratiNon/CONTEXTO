@@ -11,6 +11,7 @@ import {
 const SECRETS = ["ทอฟฟี่", "เสาวรส", "แมว", "กิ่ง", "ฟ้า", "แดง", "บ้าน", "รถ", "นม", "ครู"];
 
 function scoreWord(
+  secret: string,
   secretVec: number[],
   secretSense: WordSense | undefined,
   word: string,
@@ -72,7 +73,7 @@ async function main() {
       if (!wordVec) continue;
       scored.push({
         word,
-        score: scoreWord(secretVec, secretSense, word, wordVec, senses.get(word)),
+        score: scoreWord(secret, secretVec, secretSense, word, wordVec, senses.get(word)),
       });
     }
     scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word, "th"));
