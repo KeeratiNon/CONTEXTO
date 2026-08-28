@@ -33,6 +33,9 @@ type Copy = {
   retryHints: string;
   nearby: string;
   nearbyTitle: string;
+  pickSecret: string;
+  showSecret: string;
+  hideSecret: string;
 };
 
 export const COPY: Record<GameLang, Copy> = {
@@ -69,6 +72,9 @@ export const COPY: Record<GameLang, Copy> = {
     retryHints: "Try again",
     nearby: "Nearby",
     nearbyTitle: "Closest 500 words",
+    pickSecret: "Secret",
+    showSecret: "Show secret",
+    hideSecret: "Hide secret",
   },
   th: {
     daily: "รายวัน",
@@ -103,5 +109,8 @@ export const COPY: Record<GameLang, Copy> = {
     retryHints: "ลองอีกครั้ง",
     nearby: "คำใกล้เคียง",
     nearbyTitle: "คำใกล้เคียง 1–500",
+    pickSecret: "คำลับ",
+    showSecret: "โชว์คำลับ",
+    hideSecret: "ซ่อนคำลับ",
   },
 };

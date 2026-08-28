@@ -13,7 +13,7 @@ import { cluesMatchLang, langFromPuzzleId } from "@/lib/lang";
 import { MAX_HINTS, type GameLang, type Guess, type PuzzleMeta } from "@/lib/types";
 import { COPY } from "@/lib/copy";
 import { todayDate } from "@/lib/date";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, SVGProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type SaveState = {
   puzzleId: string;
@@ -30,9 +30,25 @@ type Modal = "help" | "menu" | "win" | "gaveup" | "confirm-giveup" | "nearby" | 
 const THEME_KEY = "contexto-theme";
 const HELP_KEY = "contexto-seen-help";
 const LANG_KEY = "contexto-lang";
+const SHOW_SECRET_KEY = "contexto-show-secret";
 
 function saveKey(puzzleId: string) {
   return `contexto-save:${puzzleId}`;
+}
+
+function EyeIcon({ open, ...props }: { open: boolean } & SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" {...props}>
+      <path
+        fill="currentColor"
+        d={
+          open
+            ? "M12 5c-5 0-9.3 3.1-11 7 1.7 3.9 6 7 11 7s9.3-3.1 11-7c-1.7-3.9-6-7-11-7zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-2.5A2.5 2.5 0 1 0 12 9a2.5 2.5 0 0 0 0 5z"
+            : "M3.3 2.3 2 3.6l3.1 3.1C3.1 8 1.5 10 1 12c1.7 3.9 6 7 11 7 1.8 0 3.5-.4 5-1.1l3.4 3.4 1.3-1.3zM12 17c-4.1 0-7.6-2.4-9.2-5 .6-1.1 1.6-2.3 2.9-3.2l2 2A5 5 0 0 0 12 17zm0-10c4.1 0 7.6 2.4 9.2 5-.5.9-1.2 1.8-2.1 2.6l1.5 1.5c1.3-1.1 2.3-2.5 3-3.9-1.7-3.9-6-7-11-7-1.2 0-2.3.2-3.4.5L8.7 7.2A8.7 8.7 0 0 1 12 7zm-1.9 3.2 4.7 4.7A2.5 2.5 0 0 1 12 14.5a2.5 2.5 0 0 1-1.9-4.3z"
+        }
+      />
+    </svg>
+  );
 }
 
 function readSave(puzzleId: string): SaveState | null {
@@ -72,6 +88,8 @@ export function Game() {
   const [nearby, setNearby] = useState<Guess[]>([]);
   const [nearbyBusy, setNearbyBusy] = useState(false);
   const [nearbyError, setNearbyError] = useState("");
+  const [secrets, setSecrets] = useState<string[]>([]);
+  const [showSecret, setShowSecret] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const over = won || gaveUp;
@@ -143,7 +161,11 @@ export function Game() {
     }
   }, [t.hintsNotReady, t.networkError]);
 
-  const loadPuzzle = useCallback(async (nextMode: "daily" | "unlimited", nextLang: GameLang) => {
+  const loadPuzzle = useCallback(async (
+    nextMode: "daily" | "unlimited",
+    nextLang: GameLang,
+    secretWord?: string,
+  ) => {
     setLoadingPuzzle(true);
     setHintsPreparing(false);
     setError("");
@@ -154,7 +176,11 @@ export function Game() {
           ? await fetch("/api/puzzle", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ mode: "unlimited", lang: nextLang }),
+              body: JSON.stringify({
+                mode: "unlimited",
+                lang: nextLang,
+                secret: secretWord,
+              }),
             })
           : await fetch(`/api/puzzle?date=${todayDate()}&lang=${nextLang}`);
 
@@ -235,11 +261,35 @@ export function Game() {
     setLang(storedLang);
     document.documentElement.lang = storedLang;
     document.documentElement.classList.toggle("lang-th", storedLang === "th");
+    setShowSecret(localStorage.getItem(SHOW_SECRET_KEY) === "1");
     if (!localStorage.getItem(HELP_KEY)) setModal("help");
     void loadPuzzle("daily", storedLang);
     // Mount-only: loadPuzzle identity changes with copy/lang and would refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`/api/secrets?lang=${lang}`)
+      .then((response) => response.json())
+      .then((data: { secrets?: string[] }) => {
+        if (cancelled || !Array.isArray(data.secrets)) return;
+        const locale = lang === "th" ? "th" : "en";
+        setSecrets([...data.secrets].sort((a, b) => a.localeCompare(b, locale)));
+      })
+      .catch(() => {
+        if (!cancelled) setSecrets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lang]);
+
+  function toggleShowSecret() {
+    const next = !showSecret;
+    setShowSecret(next);
+    localStorage.setItem(SHOW_SECRET_KEY, next ? "1" : "0");
+  }
 
   function toggleTheme() {
     const next = !dark;
@@ -545,6 +595,30 @@ export function Game() {
             </button>
           </nav>
 
+          {secrets.length ? (
+            <label className="secret-pick">
+              <span className="secret-pick-label">{t.pickSecret}</span>
+              <select
+                value={showSecret && secret && secrets.includes(secret) ? secret : ""}
+                disabled={busy || loadingPuzzle}
+                onChange={(event) => {
+                  const word = event.target.value;
+                  if (!word || word === secret) return;
+                  setMode("unlimited");
+                  void loadPuzzle("unlimited", lang, word);
+                }}
+                aria-label={t.pickSecret}
+              >
+                <option value="">{t.pickSecret}</option>
+                {secrets.map((word) => (
+                  <option key={word} value={word}>
+                    {word}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
           {clues.length ? (
             <section className="clue-rail" aria-label={t.hintLabel}>
               {clues.map((clue, index) => (
@@ -569,7 +643,10 @@ export function Game() {
                 </button>
                 <button
                   className="play-again"
-                  onClick={() => void switchMode("unlimited", true)}
+                  onClick={() => {
+                    setMode("unlimited");
+                    void loadPuzzle("unlimited", lang, secret ?? undefined);
+                  }}
                   disabled={busy || loadingPuzzle}
                 >
                   {t.playAgain}
@@ -602,19 +679,37 @@ export function Game() {
           </div>
 
           <form className="guess-form" onSubmit={onSubmit}>
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={secret ?? t.typeWord}
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              autoFocus
-              disabled={over || !puzzle}
-              aria-label="Guess"
-            />
+            <div className="guess-field">
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder={showSecret && secret ? secret : t.typeWord}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoFocus
+                disabled={over || !puzzle}
+                aria-label="Guess"
+              />
+              <EyeIcon
+                className="eye-btn"
+                open={showSecret}
+                onClick={toggleShowSecret}
+                onMouseDown={(event) => event.preventDefault()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggleShowSecret();
+                  }
+                }}
+                aria-label={showSecret ? t.hideSecret : t.showSecret}
+                aria-pressed={showSecret}
+                role="button"
+                tabIndex={0}
+              />
+            </div>
             <button
               type="submit"
               disabled={over || busy || !puzzle || !input.trim()}

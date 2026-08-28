@@ -4,7 +4,7 @@ import { pathsFor } from "./paths";
 import { GameError, MAX_HINTS, type GameLang, type GameMode, type PuzzleMeta, type SecretClueCache, type StoredPuzzle } from "./types";
 import { cluesMatchLang, dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
 import { gameNumberForDate } from "./date";
-import { loadSecrets, pickDailySecret, pickUnlimitedSecret } from "./words";
+import { loadSecrets, loadVocabulary, normalizeWord, pickDailySecret, pickUnlimitedSecret } from "./words";
 import { getCachedRanks, requireSeedMeta } from "./vectordb";
 import { categoriesFor } from "./categories";
 import { hintFactError } from "./clue-traits";
@@ -108,9 +108,21 @@ export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): Sto
   return puzzle;
 }
 
-export function createUnlimitedPuzzle(lang: GameLang = "en"): StoredPuzzle {
+export function createUnlimitedPuzzle(lang: GameLang = "en", secretWord?: string): StoredPuzzle {
+  const secrets = loadSecrets(lang);
+  const requested = secretWord ? normalizeWord(secretWord, lang) : "";
+  let secret = pickUnlimitedSecret(secrets);
+  if (requested) {
+    const allowed = new Set(loadVocabulary(lang));
+    if (!allowed.has(requested)) {
+      throw new GameError(
+        "unknown_word",
+        lang === "th" ? "ไม่รู้จักคำนี้" : "I don't know this word.",
+      );
+    }
+    secret = requested;
+  }
   const id = lang === "th" ? `ul-th-${crypto.randomUUID()}` : `ul-${crypto.randomUUID()}`;
-  const secret = pickUnlimitedSecret(loadSecrets(lang));
   const puzzle: StoredPuzzle = {
     id,
     mode: "unlimited",
@@ -163,11 +175,12 @@ export async function openPuzzle(
   mode: GameMode,
   date?: string,
   lang: GameLang = "en",
+  secretWord?: string,
 ): Promise<{ meta: PuzzleMeta; puzzle: StoredPuzzle }> {
   const seed = requireSeedMeta(lang);
   const puzzle =
     mode === "unlimited"
-      ? createUnlimitedPuzzle(lang)
+      ? createUnlimitedPuzzle(lang, secretWord)
       : getOrCreateDailyPuzzle(date ?? new Date().toISOString().slice(0, 10), lang);
 
   await getCachedRanks(puzzle.id, puzzle.secret);

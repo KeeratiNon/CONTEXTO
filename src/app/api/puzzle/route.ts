@@ -19,10 +19,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { mode?: string; date?: string; lang?: string };
+    const body = (await request.json()) as {
+      mode?: string;
+      date?: string;
+      lang?: string;
+      secret?: string;
+    };
     const lang = parseLang(body.lang);
     if (body.mode === "unlimited") {
-      return Response.json(await startGame("unlimited", undefined, lang));
+      return Response.json(await startGame("unlimited", undefined, lang, body.secret));
     }
     return Response.json(await startGame("daily", body.date || todayDate(), lang));
   } catch (error) {
