@@ -58,7 +58,7 @@ export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]
 export async function startGame(
   mode: GameMode,
   date?: string,
-  lang: GameLang = "en",
+  lang: GameLang = "th",
   secretWord?: string,
   avoidWord?: string,
 ): Promise<PuzzleMeta> {

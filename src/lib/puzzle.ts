@@ -99,7 +99,7 @@ export function hydratePuzzleClues(puzzle: StoredPuzzle): string[] | null {
   return shared;
 }
 
-export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): StoredPuzzle {
+export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "th"): StoredPuzzle {
   const id = dailyPuzzleId(date, lang);
   const existing = readPuzzle(id, lang);
   if (existing) return existing;
@@ -130,7 +130,7 @@ export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): Sto
 }
 
 export function createUnlimitedPuzzle(
-  lang: GameLang = "en",
+  lang: GameLang = "th",
   secretWord?: string,
   avoidWord?: string,
 ): StoredPuzzle {
@@ -207,7 +207,7 @@ export function toPuzzleMeta(
 export async function openPuzzle(
   mode: GameMode,
   date?: string,
-  lang: GameLang = "en",
+  lang: GameLang = "th",
   secretWord?: string,
 ): Promise<{ meta: PuzzleMeta; puzzle: StoredPuzzle }> {
   const seed = requireSeedMeta(lang);

@@ -27,8 +27,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
-      className={`${sans.variable} ${thai.variable} ${mono.variable} h-full antialiased`}
+      lang="th"
+      className={`${sans.variable} ${thai.variable} ${mono.variable} h-full antialiased lang-th`}
       suppressHydrationWarning
     >
       <body className="min-h-full">{children}</body>

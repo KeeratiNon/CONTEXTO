@@ -67,7 +67,7 @@ function writeSave(state: SaveState) {
 
 export function Game() {
   const [dark, setDark] = useState(false);
-  const [lang, setLang] = useState<GameLang>("en");
+  const [lang, setLang] = useState<GameLang>("th");
   const [mode, setMode] = useState<"daily" | "unlimited">("daily");
   const [puzzle, setPuzzle] = useState<PuzzleMeta | null>(null);
   const [guesses, setGuesses] = useState<Guess[]>([]);
@@ -260,9 +260,10 @@ export function Game() {
     const nextDark = stored === "dark";
     setDark(nextDark);
     document.documentElement.classList.toggle("dark", nextDark);
-    const storedLang = localStorage.getItem(LANG_KEY) === "th" ? "th" : "en";
+    const storedLang: GameLang = "th";
     const storedMode = localStorage.getItem(MODE_KEY) === "unlimited" ? "unlimited" : "daily";
     setLang(storedLang);
+    localStorage.setItem(LANG_KEY, storedLang);
     setMode(storedMode);
     document.documentElement.lang = storedLang;
     document.documentElement.classList.toggle("lang-th", storedLang === "th");
@@ -311,6 +312,7 @@ export function Game() {
     await loadPuzzle(nextMode, lang, undefined, nextMode === "unlimited" ? secret ?? undefined : undefined);
   }
 
+  /* Language switch hidden — Thai only
   async function switchLang(nextLang: GameLang) {
     if (nextLang === lang && puzzle) return;
     setLang(nextLang);
@@ -328,6 +330,7 @@ export function Game() {
     setNearbyError("");
     await loadPuzzle(mode, nextLang);
   }
+  */
 
   async function sendGuess(word: string) {
     if (!puzzle || over) return;
@@ -535,6 +538,7 @@ export function Game() {
           </p>
         </div>
         <div className="header-right">
+          {/* Language switch hidden — Thai only
           <div className="lang-switch" role="group" aria-label="Language">
             <button
               className={lang === "en" ? "active" : ""}
@@ -551,6 +555,7 @@ export function Game() {
               TH
             </button>
           </div>
+          */}
           <button
             className="icon-btn"
             onClick={toggleTheme}

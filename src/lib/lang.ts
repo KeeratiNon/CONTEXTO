@@ -1,7 +1,7 @@
 export type GameLang = "en" | "th";
 
 export function parseLang(raw: unknown): GameLang {
-  return String(raw ?? "").trim().toLowerCase() === "th" ? "th" : "en";
+  return String(raw ?? "").trim().toLowerCase() === "en" ? "en" : "th";
 }
 
 export function langFromPuzzleId(id: string): GameLang {
