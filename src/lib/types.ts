@@ -1,6 +1,16 @@
 import type { GameLang } from "./lang";
 
 export const MAX_HINTS = 3;
+export const HINT_LEVELS = 3;
+export const HINTS_PER_LEVEL = 3;
+export const HINT_PACK_SIZE = HINT_LEVELS * HINTS_PER_LEVEL;
+
+export type HintLevels = [string[], string[], string[]];
+
+export type HintPack = {
+  meaning?: string;
+  levels: HintLevels;
+};
 export type GameMode = "daily" | "unlimited";
 export type EmbeddingProvider = "glove" | "fasttext" | "local" | "openai";
 export type { GameLang };
@@ -41,6 +51,17 @@ export type SecretClueCache = {
   secret: string;
   clues: string[];
   cluesSource: "ai";
+};
+
+export type PreparedMeta = {
+  rankVersion: number;
+  vocabSize: number;
+  secretCount: number;
+};
+
+export type RerankBuckets = {
+  close: string[];
+  far: string[];
 };
 
 export type StoredPuzzle = {

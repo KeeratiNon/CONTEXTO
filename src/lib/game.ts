@@ -1,4 +1,3 @@
-import { nextCluePack } from "./clues";
 import { COPY } from "./copy";
 import { todayDate } from "./date";
 import { langFromPuzzleId, type GameLang } from "./lang";
@@ -12,8 +11,6 @@ import {
   hydratePuzzleClues,
   loadPuzzle,
   nearbyWords,
-  saveCluesForSecret,
-  savePuzzle,
   toPuzzleMeta,
 } from "./puzzle";
 
@@ -33,16 +30,13 @@ async function generatePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
   if (existing) return existing;
 
   const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
-  const pack = await nextCluePack({
-    secret: puzzle.secret,
-    lang,
-    guessed: [],
-  });
-  puzzle.clues = pack.planned;
-  puzzle.cluesSource = pack.source;
-  savePuzzle(puzzle);
-  saveCluesForSecret(puzzle.secret, lang, pack.planned);
-  return pack.planned;
+  throw new GameError(
+    "hint_unavailable",
+    lang === "th"
+      ? "ยังไม่มีคำใบ้ที่เตรียมไว้ รัน npm run prepare:th"
+      : "Prepared hints are missing. Run npm run prepare:th.",
+    503,
+  );
 }
 
 export async function preparePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
@@ -75,7 +69,7 @@ export async function startGame(
 
   const plannedPromise = preparePuzzleClues(puzzle).catch((error) => {
     console.warn(
-      "[hints] startGame prepare failed:",
+      `[hints] startGame prepare failed for ${puzzle.secret}:`,
       error instanceof Error ? error.message : error,
     );
     return hydratePuzzleClues(puzzle) ?? [];

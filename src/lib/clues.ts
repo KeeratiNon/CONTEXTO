@@ -11,23 +11,26 @@ import {
   specificHints,
 } from "./clue-traits";
 import { hintMatchesLang, type GameLang } from "./lang";
-import { GameError, MAX_HINTS } from "./types";
-
-const GROQ_TIMEOUT_MS = 8_000;
+import { hasLlm, llmClient, llmModel, llmProvider, throwIfRateLimited, withProviderParams } from "./llm";
+import { isCompleteHintPack } from "./prepared";
+import {
+  HINT_LEVELS,
+  HINTS_PER_LEVEL,
+  type HintLevels,
+  type HintPack,
+} from "./types";
 
 function fold(text: string): string {
   return text.trim().toLowerCase().replace(/[\s\-่้๊๋็์ฺ]/g, "");
 }
 
-function containsTerm(clue: string, term: string): boolean {
-  const hay = fold(clue);
-  const needle = fold(term);
-  if (needle.length < 2 || hay.length < 2) return false;
-  return hay === needle || hay.includes(needle) || needle.includes(hay);
-}
-
-function clueConflicts(clue: string, blocked: string[]): boolean {
-  return blocked.some((term) => containsTerm(clue, term));
+function hintText(item: unknown): string {
+  if (typeof item === "string") return item.trim();
+  if (item && typeof item === "object" && "text" in item) {
+    const textValue = (item as { text?: unknown }).text;
+    return typeof textValue === "string" ? textValue.trim() : "";
+  }
+  return "";
 }
 
 function uniqueList(items: string[]): string[] {
@@ -41,6 +44,129 @@ function uniqueList(items: string[]): string[] {
     out.push(trimmed);
   }
   return out;
+}
+
+function containsTerm(clue: string, term: string): boolean {
+  const hay = fold(clue);
+  const needle = fold(term);
+  if (needle.length < 2 || hay.length < 2) return false;
+  if (hay === needle) return true;
+  if (needle.length <= 2) return false;
+  return hay.includes(needle);
+}
+
+function clueConflicts(clue: string, blocked: string[]): boolean {
+  return blocked.some((term) => containsTerm(clue, term));
+}
+
+function namesSecret(clue: string, secret: string): boolean {
+  const clueN = clue.trim().normalize("NFC");
+  const secretN = secret.trim().normalize("NFC");
+  if (!secretN) return false;
+  if (fold(clueN) === fold(secretN)) return true;
+  // อา inside อาหาร is fine; เท้า inside มีเท้า is a leak.
+  if (secretN.length <= 2 && fold(secretN).length <= 2) return false;
+  return clueN.includes(secretN);
+}
+
+function scrubHint(hint: string, lang: GameLang): string {
+  if (lang !== "th") return hint;
+  return hint
+    .replace(/[A-Za-z]{2,}/g, " ")
+    .replace(/[()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripSecretFromHint(hint: string, secret: string): string {
+  const secretN = secret.trim().normalize("NFC");
+  if (secretN.length <= 2) return hint;
+  if (!hint.includes(secretN)) return hint;
+  return hint.split(secretN).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function takeHints(items: unknown, secret: string, blocked: string[], lang: GameLang, limit: number): string[] {
+  const guessed = blocked.filter((word) => fold(word) !== fold(secret));
+  const hints = (Array.isArray(items) ? items : [])
+    .map(hintText)
+    .filter(Boolean)
+    .map((hint) => scrubHint(hint, lang))
+    .map((hint) => stripSecretFromHint(hint, secret))
+    .map((hint) => (hint.length > 28 ? hint.slice(0, 28).trim() : hint));
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const hint of hints) {
+    if (cleaned.length >= limit) break;
+    if (!hint || hint.length < 2) continue;
+    const key = fold(hint);
+    if (!key || seen.has(key)) continue;
+    if (namesSecret(hint, secret)) continue;
+    if (!hintMatchesLang(hint, lang)) continue;
+    if (clueConflicts(hint, guessed)) continue;
+    seen.add(key);
+    cleaned.push(hint);
+  }
+  return cleaned;
+}
+
+function fillLevels(groups: string[][], extras: string[]): HintLevels | null {
+  const used = new Set<string>();
+  const levels: string[][] = [[], [], []];
+  for (let i = 0; i < HINT_LEVELS; i += 1) {
+    for (const hint of groups[i] ?? []) {
+      const key = fold(hint);
+      if (!key || used.has(key) || levels[i].length >= HINTS_PER_LEVEL) continue;
+      used.add(key);
+      levels[i].push(hint);
+    }
+  }
+  const leftover = extras.filter((hint) => {
+    const key = fold(hint);
+    if (!key || used.has(key)) return false;
+    used.add(key);
+    return true;
+  });
+  for (let i = 0; i < HINT_LEVELS; i += 1) {
+    while (levels[i].length < HINTS_PER_LEVEL && leftover.length) {
+      levels[i].push(leftover.shift() as string);
+    }
+  }
+  if (levels.every((level) => level.length === HINTS_PER_LEVEL)) {
+    return levels as HintLevels;
+  }
+  return null;
+}
+
+function levelsFromUnknown(
+  parsed: { levels?: unknown; hints?: unknown },
+  secret: string,
+  blocked: string[],
+  lang: GameLang,
+): HintLevels | { error: string } {
+  const fromNamed = parsed.levels && typeof parsed.levels === "object" && !Array.isArray(parsed.levels)
+    ? parsed.levels as Record<string, unknown>
+    : null;
+  const fromArray = Array.isArray(parsed.levels) ? parsed.levels : null;
+  const rawLevels: unknown[] = fromArray
+    ? fromArray
+    : fromNamed
+      ? [fromNamed["1"] ?? fromNamed.broad, fromNamed["2"] ?? fromNamed.medium, fromNamed["3"] ?? fromNamed.specific]
+      : [];
+
+  const groups = rawLevels.slice(0, HINT_LEVELS).map((level) =>
+    takeHints(level, secret, blocked, lang, 8),
+  );
+  const extras = takeHints(parsed.hints, secret, blocked, lang, 16);
+  const packed = fillLevels(groups, [...groups.flat(), ...extras]);
+  if (packed) return packed;
+
+  const kept = groups.reduce((sum, level) => sum + level.length, 0);
+  return {
+    error:
+      lang === "en"
+        ? `need 9 unique English hints in 3 levels (kept ${kept})`
+        : `ต้องได้คำใบ้ 9 ข้อ คนละระดับ ระดับละ 3 ข้อ (เหลือ ${kept})`,
+  };
 }
 
 export function nearbyGuessWords(
@@ -69,62 +195,40 @@ function parseAiHintPack(
   secret: string,
   blocked: string[],
   lang: GameLang,
-): { hints: string[]; factError?: string } | { error: string } {
+): { pack: HintPack; factError?: string } | { error: string } {
   const cats = categoriesFor(secret, lang);
   const tryParse = (
     text: string,
-  ): { hints: string[]; factError?: string } | { error: string } => {
+  ): { pack: HintPack; factError?: string } | { error: string } => {
     try {
-      const parsed = JSON.parse(text) as { hints?: unknown; meaning?: unknown };
+      const parsed = JSON.parse(text) as {
+        hints?: unknown;
+        levels?: unknown;
+        meaning?: unknown;
+      };
+      let meaning: string | undefined;
       if (typeof parsed.meaning === "string" && parsed.meaning.trim()) {
-        const meaning = parsed.meaning.trim();
+        meaning = parsed.meaning.trim();
         console.info(`[hints] model gloss: ${meaning}`);
         const glossError = glossFactError(secret, meaning, cats);
         if (glossError) return { error: glossError };
       }
-      if (!Array.isArray(parsed.hints)) return { error: "missing hints array" };
-      const hints = parsed.hints
-        .map((item) => {
-          if (typeof item === "string") return item.trim();
-          if (item && typeof item === "object" && "text" in item) {
-            const textValue = (item as { text?: unknown }).text;
-            return typeof textValue === "string" ? textValue.trim() : "";
-          }
-          return "";
-        })
-        .filter(Boolean)
-        .map((hint) => (hint.length > 28 ? hint.slice(0, 28).trim() : hint));
-      if (hints.length < MAX_HINTS) return { error: "fewer than 3 hints" };
-      const cleaned: string[] = [];
-      for (const hint of hints) {
-        if (cleaned.length >= MAX_HINTS) break;
-        if (!hint || hint.length < 2) continue;
-        if (containsTerm(hint, secret)) continue;
-        if (!hintMatchesLang(hint, lang)) continue;
-        if (clueConflicts(hint, [...blocked, ...cleaned])) continue;
-        cleaned.push(hint);
-      }
-      if (cleaned.length < MAX_HINTS) {
-        return {
-          error:
-            lang === "en"
-              ? "hints must be English, not Thai"
-              : "a hint named the secret, used English, or repeated a guess",
-        };
-      }
-      const factError = lang === "th" ? hintFactError(secret, cleaned, cats) : null;
+      const levels = levelsFromUnknown(parsed, secret, blocked, lang);
+      if ("error" in levels) return levels;
+      const pack: HintPack = { meaning, levels };
+      const factError = lang === "th" ? hintFactError(secret, levels.flat(), cats) : null;
       if (factError) {
         console.warn(`[hints] fact-check: ${factError} rejected for ${secret}`);
-        return { hints: cleaned, factError: hintFactRejectMessage(factError, cleaned) };
+        return { pack, factError: hintFactRejectMessage(factError, levels.flat()) };
       }
-      return { hints: cleaned };
+      return { pack };
     } catch {
       return { error: "invalid JSON" };
     }
   };
 
   const direct = tryParse(raw.trim());
-  if ("hints" in direct) return direct;
+  if ("pack" in direct) return direct;
   const match = raw.match(/\{[\s\S]*\}/);
   return match ? tryParse(match[0]) : direct;
 }
@@ -194,7 +298,7 @@ function buildCluePackPrompt(options: {
       : "Each hint must narrow toward the secret, not restate a broad category.";
 
   return [
-    `Identify this ${language} word first, then write 3 progressive Contexto hints in ${language}.`,
+    `Identify this ${language} word first, then write 12 unique Contexto hint candidates in ${language} (4 per level). We keep 9.`,
     `Hint language: ${language} only. Secret (never say/spell/translate it in hints): ${options.secret}`,
     languageRules,
     "If the spelling has several senses, pick the sense matching the given category.",
@@ -208,10 +312,13 @@ function buildCluePackPrompt(options: {
     "Every hint must be factually true of THIS secret only. False colors, seeds, shells, legs, wings, or venom are forbidden.",
     "Do not copy traits from a similar fruit, animal, dish, or nearby guess.",
     "Never write another dish or species name as a hint. Describe THIS spelling only.",
-    "Hint 1 broad true property. Hint 2 true subtype. Hint 3 distinctive true trait, still unnamed.",
+    "All 9 hints point at the same secret, but none may repeat a phrase or the same fact.",
+    "Level 1 — 4 broad true properties (category / what kind of thing it is).",
+    "Level 2 — 4 medium true traits (use, context, or subtype).",
+    "Level 3 — 4 distinctive true traits that still do not name it.",
     "No guessed words. No empty labels.",
     options.rejectReason ? `REJECTED LAST ATTEMPT: ${options.rejectReason}` : "",
-    'Return ONLY JSON {"meaning":"english gloss of THIS word","hints":["...","...","...","..."]} with 4 true candidates.',
+    'Return ONLY JSON {"meaning":"english gloss of THIS word","levels":{"1":["","","",""],"2":["","","",""],"3":["","","",""]}}.',
   ].filter(Boolean).join("\n");
 }
 
@@ -224,34 +331,25 @@ type HintGenOptions = {
 };
 
 export function hasGroqHints(): boolean {
-  return Boolean(process.env.GROQ_API_KEY?.trim());
+  return hasLlm();
 }
 
-function groqClient(apiKey: string): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL: "https://api.groq.com/openai/v1",
-    timeout: GROQ_TIMEOUT_MS,
-  });
-}
-
-function groqModel(): string {
-  return process.env.GROQ_HINT_MODEL ?? "openai/gpt-oss-120b";
-}
-
-async function groqComplete(
+async function llmComplete(
   client: OpenAI,
   model: string,
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   temperature = 0.2,
+  maxTokens = 900,
 ): Promise<string | null> {
-  const response = await client.chat.completions.create({
-    model,
-    temperature,
-    max_tokens: 400,
-    messages,
-    reasoning_effort: "low",
-  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+  const response = await client.chat.completions.create(
+    withProviderParams({
+      model,
+      temperature,
+      max_tokens: maxTokens,
+      response_format: { type: "json_object" },
+      messages,
+    }) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  );
   const message = response.choices[0]?.message as {
     content?: string | null;
     reasoning?: string;
@@ -266,13 +364,13 @@ async function auditCluePackWithGroq(
   client: OpenAI,
   model: string,
   options: HintGenOptions,
-  hints: string[],
+  pack: HintPack,
   why: string,
-): Promise<string[] | null> {
+): Promise<HintPack | null> {
   const cats = categoriesFor(options.secret, options.lang);
   const started = Date.now();
   try {
-    const raw = await groqComplete(client, model, [
+    const raw = await llmComplete(client, model, [
       {
         role: "system",
         content:
@@ -285,10 +383,10 @@ async function auditCluePackWithGroq(
           `Language: ${options.lang === "th" ? "Thai" : "English"}`,
           `Categories: ${cats.join(", ") || "unknown"}`,
           promptGuardFor(options.secret, cats),
-          `These hints failed a fact-check: ${JSON.stringify(hints)}`,
+          `These 9 hints in 3 levels failed a fact-check: ${JSON.stringify(pack.levels)}`,
           `Reason: ${why}`,
-          "Write 3 corrected hints that are factually true of THIS exact spelling — not a similar word.",
-          'Return {"ok":false,"why":"short reason","hints":["true1","true2","true3"]}.',
+          "Write 9 corrected unique hints (3 per level) that are factually true of THIS exact spelling — not a similar word.",
+          'Return {"ok":false,"why":"short reason","levels":{"1":["","",""],"2":["","",""],"3":["","",""]}}.',
           options.lang === "th"
             ? "Corrected hints must be Thai script only, under 16 characters. No English."
             : "Corrected hints must be English only, under 6 words. No Thai script.",
@@ -307,8 +405,9 @@ async function auditCluePackWithGroq(
       return null;
     }
     console.info(`[hints] groq audit ok in ${Date.now() - started}ms`);
-    return parsed.hints;
+    return parsed.pack;
   } catch (error) {
+    throwIfRateLimited(error);
     console.warn(
       `[hints] groq audit error in ${Date.now() - started}ms:`,
       error instanceof Error ? error.message : error,
@@ -319,12 +418,12 @@ async function auditCluePackWithGroq(
 
 const RETRY_TEMPERATURE = [0.2, 0.4, 0.55, 0.7];
 
-async function generateCluePackWithGroq(options: HintGenOptions): Promise<string[] | null> {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
-  if (!apiKey) return null;
+export async function generateHintPackWithGroq(options: HintGenOptions): Promise<HintPack | null> {
+  const client = llmClient();
+  if (!client) return null;
 
-  const model = groqModel();
-  const client = groqClient(apiKey);
+  const model = llmModel();
+  const provider = llmProvider() ?? "llm";
   const language = options.lang === "th" ? "Thai" : "English";
 
   let rejectReason = options.rejectReason;
@@ -332,14 +431,14 @@ async function generateCluePackWithGroq(options: HintGenOptions): Promise<string
     const started = Date.now();
     const temperature = RETRY_TEMPERATURE[attempt - 1] ?? 0.5;
     try {
-      const raw = await groqComplete(
+      const raw = await llmComplete(
         client,
         model,
         [
           {
             role: "system",
             content:
-              `Identify the exact ${language} spelling, not a similar-looking word. Return only JSON with keys meaning and hints. Hints must be in ${language} only. Never put the secret in a hint. False physical traits are forbidden.`,
+              `Identify the exact ${language} spelling, not a similar-looking word. Return only JSON with keys meaning and levels. Each level needs 4 short unique hints. Hints must be in ${language} only. Never put the secret in a hint. False physical traits are forbidden.`,
           },
           {
             role: "user",
@@ -354,32 +453,33 @@ async function generateCluePackWithGroq(options: HintGenOptions): Promise<string
       if ("error" in parsed) {
         rejectReason = parsed.error;
         console.info(
-          `[hints] groq ${model} attempt ${attempt} failed in ${Date.now() - started}ms: ${parsed.error}`,
+          `[hints] ${provider} ${model} attempt ${attempt} failed in ${Date.now() - started}ms: ${parsed.error}`,
         );
         continue;
       }
 
-      if (!parsed.factError) {
-        console.info(`[hints] groq ${model} ok in ${Date.now() - started}ms`);
-        return parsed.hints;
+      if (!parsed.factError && isCompleteHintPack(parsed.pack)) {
+        console.info(`[hints] ${provider} ${model} ok in ${Date.now() - started}ms`);
+        return parsed.pack;
       }
 
       const audited = await auditCluePackWithGroq(
         client,
         model,
         options,
-        parsed.hints,
-        parsed.factError,
+        parsed.pack,
+        parsed.factError ?? "incomplete pack",
       );
-      if (audited) {
-        console.info(`[hints] groq ${model} repaired in ${Date.now() - started}ms`);
+      if (audited && isCompleteHintPack(audited)) {
+        console.info(`[hints] ${provider} ${model} repaired in ${Date.now() - started}ms`);
         return audited;
       }
-      rejectReason = parsed.factError;
-      console.info(`[hints] groq ${model} attempt ${attempt} failed local check`);
+      rejectReason = parsed.factError ?? "incomplete pack";
+      console.info(`[hints] ${provider} ${model} attempt ${attempt} failed local check`);
     } catch (error) {
+      throwIfRateLimited(error);
       console.warn(
-        `[hints] groq attempt ${attempt} failed in ${Date.now() - started}ms:`,
+        `[hints] ${provider} attempt ${attempt} failed in ${Date.now() - started}ms:`,
         error instanceof Error ? error.message : error,
       );
       return null;
@@ -388,41 +488,11 @@ async function generateCluePackWithGroq(options: HintGenOptions): Promise<string
   return null;
 }
 
-export type CluePackSource = "ai";
-
-export async function nextCluePack(options: {
-  secret: string;
-  lang: GameLang;
-  guessed?: string[];
-  ranks?: Map<string, number>;
-}): Promise<{ clues: string[]; planned: string[]; source: CluePackSource }> {
-  const guessed = options.guessed ?? [];
-  const ranks = options.ranks ?? new Map<string, number>();
-  const nearby = nearbyGuessWords(guessed, ranks);
-  const blocked = uniqueList([options.secret, ...guessed]);
-  const started = Date.now();
-
-  const packOptions = {
-    secret: options.secret,
-    lang: options.lang,
-    nearby,
-    blocked,
-  };
-  const planned = await generateCluePackWithGroq(packOptions);
-
-  if (planned && planned.length >= MAX_HINTS) {
-    const uniquePlanned = uniqueList(planned).slice(0, MAX_HINTS);
-    if (uniquePlanned.length >= MAX_HINTS) {
-      console.info(`[hints] using ai pack in ${Date.now() - started}ms`);
-      return { clues: [uniquePlanned[0]], planned: uniquePlanned, source: "ai" };
-    }
-  }
-
-  throw new GameError(
-    "hint_unavailable",
-    options.lang === "th"
-      ? "ยังเตรียมคำใบ้ไม่ได้ ใส่ GROQ_API_KEY ใน .env แล้วรีสตาร์ทเซิร์ฟเวอร์"
-      : "Hints unavailable. Add GROQ_API_KEY to .env and restart the server.",
-    503,
-  );
+export async function generateHintPackForSecret(secret: string, lang: GameLang): Promise<HintPack | null> {
+  return generateHintPackWithGroq({
+    secret,
+    lang,
+    nearby: [],
+    blocked: [secret],
+  });
 }

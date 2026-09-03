@@ -8,16 +8,14 @@ import {
 } from "./categories";
 import { englishNamesFor } from "./clue-traits";
 import type { GameLang } from "./lang";
+import { llmClient, llmModel, llmProvider, throwIfRateLimited, withProviderParams } from "./llm";
+import { loadRerankBuckets } from "./prepared";
+import type { RerankBuckets } from "./types";
 
-const RERANK_POOL = 120;
-const GROQ_TIMEOUT_MS = 20_000;
+export const RERANK_POOL = 120;
 
-function hasGroq(): boolean {
-  return Boolean(process.env.GROQ_API_KEY?.trim());
-}
-
-function groqModel(): string {
-  return process.env.GROQ_HINT_MODEL ?? "openai/gpt-oss-120b";
+function hasLlmRerank(): boolean {
+  return Boolean(llmClient());
 }
 
 function extractJson(raw: string): { close?: unknown; far?: unknown } | null {
@@ -54,22 +52,16 @@ function asWordList(value: unknown, allowed: Set<string>): string[] {
   return out;
 }
 
-type RerankBuckets = { close: string[]; far: string[] };
-
-async function groqRerankBuckets(
+export async function groqRerankBuckets(
   secret: string,
   lang: GameLang,
   pool: string[],
 ): Promise<RerankBuckets | null> {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
-  if (!apiKey) return null;
+  const client = llmClient();
+  if (!client) return null;
 
-  const model = groqModel();
-  const client = new OpenAI({
-    apiKey,
-    baseURL: "https://api.groq.com/openai/v1",
-    timeout: GROQ_TIMEOUT_MS,
-  });
+  const model = llmModel();
+  const provider = llmProvider() ?? "llm";
   const cats = categoriesFor(secret, lang);
   const gloss = englishNamesFor(secret)[0];
   const category =
@@ -79,36 +71,37 @@ async function groqRerankBuckets(
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await client.chat.completions.create({
-        model,
-        temperature: 0,
-        max_tokens: 900,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              'You rerank neighbors for a semantic word game. Return only JSON {"close":["..."],"far":["..."]}.',
-          },
-          {
-            role: "user",
-            content: [
-              `Secret: ${secret}`,
-              gloss ? `Meaning: ${gloss}` : "",
-              `Language: ${lang === "th" ? "Thai" : "English"}`,
-              `Category: ${category}`,
-              "An embedding model ranked these as close. Same category is not enough.",
-              "close = the nearest in meaning, closest first, at most 12 words.",
-              "Examples: gray → black/white, not green. Congee → rice porridge, not ketchup.",
-              "far = wrong sense or unrelated. Omit ordinary same-category words from both lists.",
-              `Candidates: ${JSON.stringify(pool)}`,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          },
-        ],
-        reasoning_effort: "low",
-      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+      const response = await client.chat.completions.create(
+        withProviderParams({
+          model,
+          temperature: 0,
+          max_tokens: 900,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content:
+                'You rerank neighbors for a semantic word game. Return only JSON {"close":["..."],"far":["..."]}.',
+            },
+            {
+              role: "user",
+              content: [
+                `Secret: ${secret}`,
+                gloss ? `Meaning: ${gloss}` : "",
+                `Language: ${lang === "th" ? "Thai" : "English"}`,
+                `Category: ${category}`,
+                "An embedding model ranked these as close. Same category is not enough.",
+                "close = the nearest in meaning, closest first, at most 12 words.",
+                "Examples: gray → black/white, not green. Congee → rice porridge, not ketchup.",
+                "far = wrong sense or unrelated. Omit ordinary same-category words from both lists.",
+                `Candidates: ${JSON.stringify(pool)}`,
+              ]
+                .filter(Boolean)
+                .join("\n"),
+            },
+          ],
+        }) as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+      );
       const message = response.choices[0]?.message as {
         content?: string | null;
         reasoning?: string;
@@ -118,26 +111,21 @@ async function groqRerankBuckets(
       const close = asWordList(parsed?.close, allowed);
       const far = asWordList(parsed?.far, allowed).filter((word) => !close.includes(word));
       console.info(
-        `[rank] groq buckets close=${close.length} far=${far.length} in ${Date.now() - started}ms`,
+        `[rank] ${provider} buckets close=${close.length} far=${far.length} in ${Date.now() - started}ms`,
       );
       if (!close.length && !far.length) return null;
       return { close, far };
     } catch (error) {
+      throwIfRateLimited(error);
       const message = error instanceof Error ? error.message : String(error);
-      const wait = message.match(/try again in ([\d.]+)\s*s/i);
-      if (message.includes("429") && attempt < 3) {
-        const delay = wait ? Math.ceil(Number(wait[1]) * 1000) + 250 : 1500 * attempt;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-      console.warn(`[rank] groq rerank failed in ${Date.now() - started}ms:`, message);
+      console.warn(`[rank] ${provider} rerank failed in ${Date.now() - started}ms:`, message);
       return null;
     }
   }
   return null;
 }
 
-function applyBuckets(
+export function applyBuckets(
   secret: string,
   lang: GameLang,
   pool: string[],
@@ -172,11 +160,19 @@ export async function rerankTopWords(
   secret: string,
   lang: GameLang,
   words: string[],
+  options?: { groq?: boolean },
 ): Promise<string[]> {
-  if (lang !== "th" || words.length === 0 || !hasGroq()) return words;
+  if (lang !== "th" || words.length === 0) return words;
 
   const pool = words.slice(0, RERANK_POOL);
   const rest = words.slice(RERANK_POOL);
+  const prepared = loadRerankBuckets(secret, lang);
+  if (prepared) {
+    return [...applyBuckets(secret, lang, pool, prepared), ...rest];
+  }
+
+  if (!options?.groq || !hasLlmRerank()) return words;
+
   const started = Date.now();
   const buckets = await groqRerankBuckets(secret, lang, pool);
   if (!buckets) return words;
@@ -184,7 +180,7 @@ export async function rerankTopWords(
   const ordered = applyBuckets(secret, lang, pool, buckets);
   const senses = loadWordSenses(lang);
   console.info(
-    `[rank] groq rerank ${secret} (${senses.get(secret)?.categories.join(",") || "?"}) in ${Date.now() - started}ms`,
+    `[rank] ${llmProvider() ?? "llm"} rerank ${secret} (${senses.get(secret)?.categories.join(",") || "?"}) in ${Date.now() - started}ms`,
   );
   return [...ordered, ...rest];
 }

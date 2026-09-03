@@ -5,6 +5,7 @@ import { langFromPuzzleId, type GameLang } from "./lang";
 import type { RankCache, SeedMeta } from "./types";
 import { GameError } from "./types";
 import { loadWordSenses, relatednessScore, BLOCKED_WORDS_TH } from "./categories";
+import { readPreparedRanks } from "./prepared";
 import { rerankTopWords } from "./rerank";
 
 type WordRow = {
@@ -65,7 +66,7 @@ export async function getWordsTable(lang: GameLang) {
 
 export const RANK_VERSION = 10;
 
-export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<string, number>> {
+export async function scoreAllWords(secret: string, lang: GameLang): Promise<string[]> {
   const meta = requireSeedMeta(lang);
   const table = await getWordsTable(lang);
   const count = Math.max(meta.vocabSize, await table.countRows());
@@ -105,18 +106,25 @@ export async function rankAllWords(secret: string, lang: GameLang): Promise<Map<
     return { word: row.word, score: dot + relatedness };
   });
   scored.sort((a, b) => b.score - a.score || a.word.localeCompare(b.word, lang === "th" ? "th" : "en"));
-  const ordered = await rerankTopWords(
-    secret,
-    lang,
-    scored.map((row) => row.word),
-  );
+  return scored.map((row) => row.word);
+}
 
+function ranksFromOrder(secret: string, ordered: string[]): Map<string, number> {
   const ranks = new Map<string, number>();
   ranks.set(secret, 1);
   ordered.forEach((word, index) => {
     if (!ranks.has(word)) ranks.set(word, index + 2);
   });
   return ranks;
+}
+
+export async function rankAllWords(
+  secret: string,
+  lang: GameLang,
+  options?: { groq?: boolean },
+): Promise<Map<string, number>> {
+  const ordered = await rerankTopWords(secret, lang, await scoreAllWords(secret, lang), options);
+  return ranksFromOrder(secret, ordered);
 }
 
 const MAX_RANK_MEM = 8;
@@ -174,7 +182,10 @@ async function loadOrComputeRanks(puzzleId: string, secret: string): Promise<Map
   const bySecret = secretRanksPath(secret, lang);
   const byPuzzle = puzzleRanksPath(puzzleId, lang);
 
-  const cached = ranksFromCache(bySecret, secret) ?? ranksFromCache(byPuzzle, secret);
+  const cached =
+    ranksFromCache(bySecret, secret) ??
+    ranksFromCache(byPuzzle, secret) ??
+    readPreparedRanks(secret, lang, RANK_VERSION);
   if (cached) {
     if (!fs.existsSync(bySecret)) {
       fs.writeFileSync(

@@ -20,7 +20,8 @@
     "prepare-data:th": "npm run build-vocab:th && npm run build-wn-neighbors:th && npm run seed:th",
     "plot-positions": "tsx scripts/plot-word-positions.ts",
     "plot-positions:th": "LANGUAGE=th tsx scripts/plot-positions.ts",
-    "export-playable:th": "tsx scripts/export-playable-th.ts"
+    "export-playable:th": "tsx scripts/export-playable-th.ts",
+    "prepare:th": "LANGUAGE=th tsx scripts/prepare-th.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
