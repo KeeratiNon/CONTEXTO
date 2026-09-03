@@ -30,6 +30,7 @@ type Modal = "help" | "menu" | "win" | "gaveup" | "confirm-giveup" | "nearby" | 
 const THEME_KEY = "contexto-theme";
 const HELP_KEY = "contexto-seen-help";
 const LANG_KEY = "contexto-lang";
+const MODE_KEY = "contexto-mode";
 const SHOW_SECRET_KEY = "contexto-show-secret";
 
 function saveKey(puzzleId: string) {
@@ -165,6 +166,7 @@ export function Game() {
     nextMode: "daily" | "unlimited",
     nextLang: GameLang,
     secretWord?: string,
+    avoidWord?: string,
   ) => {
     setLoadingPuzzle(true);
     setHintsPreparing(false);
@@ -180,6 +182,7 @@ export function Game() {
                 mode: "unlimited",
                 lang: nextLang,
                 secret: secretWord,
+                avoid: secretWord ? undefined : avoidWord,
               }),
             })
           : await fetch(`/api/puzzle?date=${todayDate()}&lang=${nextLang}`);
@@ -258,12 +261,14 @@ export function Game() {
     setDark(nextDark);
     document.documentElement.classList.toggle("dark", nextDark);
     const storedLang = localStorage.getItem(LANG_KEY) === "th" ? "th" : "en";
+    const storedMode = localStorage.getItem(MODE_KEY) === "unlimited" ? "unlimited" : "daily";
     setLang(storedLang);
+    setMode(storedMode);
     document.documentElement.lang = storedLang;
     document.documentElement.classList.toggle("lang-th", storedLang === "th");
     setShowSecret(localStorage.getItem(SHOW_SECRET_KEY) === "1");
     if (!localStorage.getItem(HELP_KEY)) setModal("help");
-    void loadPuzzle("daily", storedLang);
+    void loadPuzzle(storedMode, storedLang);
     // Mount-only: loadPuzzle identity changes with copy/lang and would refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -299,10 +304,11 @@ export function Game() {
   }
 
   async function switchMode(nextMode: "daily" | "unlimited", force = false) {
-    if (!force && nextMode === mode && puzzle) return;
+    if (!force && nextMode === "daily" && mode === "daily" && puzzle) return;
     setMode(nextMode);
+    localStorage.setItem(MODE_KEY, nextMode);
     setModal(null);
-    await loadPuzzle(nextMode, lang);
+    await loadPuzzle(nextMode, lang, undefined, nextMode === "unlimited" ? secret ?? undefined : undefined);
   }
 
   async function switchLang(nextLang: GameLang) {
@@ -605,6 +611,7 @@ export function Game() {
                   const word = event.target.value;
                   if (!word || word === secret) return;
                   setMode("unlimited");
+                  localStorage.setItem(MODE_KEY, "unlimited");
                   void loadPuzzle("unlimited", lang, word);
                 }}
                 aria-label={t.pickSecret}
@@ -645,7 +652,8 @@ export function Game() {
                   className="play-again"
                   onClick={() => {
                     setMode("unlimited");
-                    void loadPuzzle("unlimited", lang, secret ?? undefined);
+                    localStorage.setItem(MODE_KEY, "unlimited");
+                    void loadPuzzle("unlimited", lang, undefined, secret ?? undefined);
                   }}
                   disabled={busy || loadingPuzzle}
                 >

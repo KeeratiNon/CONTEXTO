@@ -60,11 +60,12 @@ export async function startGame(
   date?: string,
   lang: GameLang = "en",
   secretWord?: string,
+  avoidWord?: string,
 ): Promise<PuzzleMeta> {
   const seed = requireSeedMeta(lang);
   const puzzle =
     mode === "unlimited"
-      ? createUnlimitedPuzzle(lang, secretWord)
+      ? createUnlimitedPuzzle(lang, secretWord, avoidWord)
       : getOrCreateDailyPuzzle(date ?? todayDate(), lang);
 
   const plannedPromise = preparePuzzleClues(puzzle).catch((error) => {

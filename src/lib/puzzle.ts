@@ -129,10 +129,15 @@ export function getOrCreateDailyPuzzle(date: string, lang: GameLang = "en"): Sto
   return puzzle;
 }
 
-export function createUnlimitedPuzzle(lang: GameLang = "en", secretWord?: string): StoredPuzzle {
+export function createUnlimitedPuzzle(
+  lang: GameLang = "en",
+  secretWord?: string,
+  avoidWord?: string,
+): StoredPuzzle {
   const secrets = loadSecrets(lang);
   const requested = secretWord ? normalizeWord(secretWord, lang) : "";
-  let secret = pickUnlimitedSecret(playableSecrets(lang, secrets));
+  const avoid = avoidWord ? normalizeWord(avoidWord, lang) : "";
+  let secret = pickUnlimitedSecret(playableSecrets(lang, secrets), avoid || undefined);
   if (requested) {
     const allowed = new Set(loadVocabulary(lang));
     if (!allowed.has(requested)) {

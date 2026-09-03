@@ -24,10 +24,11 @@ export async function POST(request: Request) {
       date?: string;
       lang?: string;
       secret?: string;
+      avoid?: string;
     };
     const lang = parseLang(body.lang);
     if (body.mode === "unlimited") {
-      return Response.json(await startGame("unlimited", undefined, lang, body.secret));
+      return Response.json(await startGame("unlimited", undefined, lang, body.secret, body.avoid));
     }
     return Response.json(await startGame("daily", body.date || todayDate(), lang));
   } catch (error) {
