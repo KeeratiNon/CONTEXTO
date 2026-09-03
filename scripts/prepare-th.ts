@@ -1,22 +1,17 @@
 /**
- * Precompute Thai hint packs + Groq-checked ranks for every secret.
+ * Precompute Groq-checked ranks for every Thai secret.
+ * Hint packs are not generated here — play reads data/th/prepared/hint-packs.json.
  *
  *   npm run prepare:th
- *   npm run prepare:th -- --hints-only
- *   npm run prepare:th -- --ranks-only
  *   npm run prepare:th -- --secret ปู
  *   npm run prepare:th -- --limit 5 --force
  *
- * Runtime play only reads these files. Groq is used here, not in production.
+ * Runtime play only reads these files. Groq is used here for rank buckets, not in production.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { generateHintPackForSecret } from "../src/lib/clues";
 import {
-  isCompleteHintPack,
-  loadHintPack,
   loadRerankBuckets,
-  saveHintPack,
   saveRerankBuckets,
   writePreparedRanks,
 } from "../src/lib/prepared";
@@ -77,21 +72,6 @@ function writeRuntimeRankCache(secret: string, ranks: Map<string, number>) {
   );
 }
 
-async function prepareHints(secret: string, force: boolean): Promise<boolean> {
-  if (!force && loadHintPack(secret, "th")) {
-    console.log(`  hints skip ${secret}`);
-    return true;
-  }
-  const pack = await generateHintPackForSecret(secret, "th");
-  if (!pack || !isCompleteHintPack(pack)) {
-    console.warn(`  hints FAIL ${secret}`);
-    return false;
-  }
-  saveHintPack(secret, "th", pack);
-  console.log(`  hints ok ${secret} (${pack.levels.flat().join(" / ")})`);
-  return true;
-}
-
 function hasGroqRanks(secret: string): boolean {
   const buckets = loadRerankBuckets(secret, "th");
   return Boolean(buckets && (buckets.close.length || buckets.far.length));
@@ -128,20 +108,17 @@ async function prepareRanks(secret: string, force: boolean): Promise<boolean> {
 async function main() {
   loadDotEnv();
   const lang = "th" as const;
-  const hintsOnly = process.argv.includes("--hints-only");
-  const ranksOnly = process.argv.includes("--ranks-only");
   const force = process.argv.includes("--force");
-  const doHints = !ranksOnly;
-  const doRanks = !hintsOnly;
   const limit = Number(argValue("--limit") || 0);
   const only = argValue("--secret");
   const pause = Number(argValue("--sleep") || 400);
 
-  if (doHints && !hasLlm()) {
-    throw new Error("GEMINI_API_KEY or GROQ_API_KEY is required to prepare hints.");
+  if (process.argv.includes("--hints-only")) {
+    throw new Error("Hint generation was removed. Edit data/th/prepared/hint-packs.json instead.");
   }
-  if (doRanks && !hasLlm()) {
-    throw new Error("GEMINI_API_KEY or GROQ_API_KEY is required to prepare rank checks.");
+
+  if (!hasLlm()) {
+    throw new Error("GROQ_API_KEY is required to prepare rank checks.");
   }
 
   const secrets = loadSecrets(lang);
@@ -151,17 +128,14 @@ async function main() {
     throw new Error(only ? `Secret not in secrets.txt: ${only}` : "No secrets found.");
   }
 
-  console.log(`Preparing ${jobs.length}/${secrets.length} Thai secrets (hints=${doHints} ranks=${doRanks})`);
+  console.log(`Preparing ranks for ${jobs.length}/${secrets.length} Thai secrets (hints from hint-packs.json)`);
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < jobs.length; i += 1) {
     const secret = jobs[i];
     console.log(`[${i + 1}/${jobs.length}] ${secret}`);
     try {
-      let good = true;
-      if (doHints) good = (await prepareHints(secret, force)) && good;
-      if (doRanks) good = (await prepareRanks(secret, force)) && good;
-      if (good) ok += 1;
+      if (await prepareRanks(secret, force)) ok += 1;
       else failed += 1;
     } catch (error) {
       if (error instanceof LlmRateLimitError) {

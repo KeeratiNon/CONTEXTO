@@ -33,8 +33,8 @@ async function generatePuzzleClues(puzzle: StoredPuzzle): Promise<string[]> {
   throw new GameError(
     "hint_unavailable",
     lang === "th"
-      ? "ยังไม่มีคำใบ้ที่เตรียมไว้ รัน npm run prepare:th"
-      : "Prepared hints are missing. Run npm run prepare:th.",
+      ? "ยังไม่มีคำใบ้ใน hint-packs.json"
+      : "Prepared hints are missing from hint-packs.json.",
     503,
   );
 }
