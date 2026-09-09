@@ -1,18 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import thHintPacks from "../../data/th/prepared/hint-packs.json";
+import type { GameLang } from "./lang";
 import { pathsFor } from "./paths";
 import {
   HINT_LEVELS,
   HINTS_PER_LEVEL,
   MAX_HINTS,
-  type GameLang,
-  type HintLevels,
   type HintPack,
   type PreparedMeta,
   type RerankBuckets,
 } from "./types";
-import { hashString, loadVocabulary } from "./words";
+import { hashString, loadVocabulary, normalizeWord } from "./words";
 
 function readJsonFile<T>(file: string, fallback: T): T {
   if (!fs.existsSync(file)) return fallback;
@@ -40,12 +40,27 @@ export function isCompleteHintPack(pack: HintPack | null | undefined): pack is H
   );
 }
 
+function normalizeHintPacks(
+  packs: Record<string, HintPack>,
+  lang: GameLang,
+): Record<string, HintPack> {
+  const out: Record<string, HintPack> = {};
+  for (const [secret, pack] of Object.entries(packs)) {
+    out[normalizeWord(secret, lang) || secret] = pack;
+  }
+  return out;
+}
+
 export function loadHintPacks(lang: GameLang): Record<string, HintPack> {
-  return readJsonFile(pathsFor(lang).hintPacksPath, {});
+  const packs =
+    lang === "th"
+      ? (thHintPacks as Record<string, HintPack>)
+      : readJsonFile<Record<string, HintPack>>(pathsFor(lang).hintPacksPath, {});
+  return normalizeHintPacks(packs, lang);
 }
 
 export function loadHintPack(secret: string, lang: GameLang): HintPack | null {
-  const pack = loadHintPacks(lang)[secret];
+  const pack = loadHintPacks(lang)[normalizeWord(secret, lang) || secret];
   return isCompleteHintPack(pack) ? pack : null;
 }
 
