@@ -280,8 +280,7 @@ export function Game() {
       .then((response) => response.json())
       .then((data: { secrets?: string[] }) => {
         if (cancelled || !Array.isArray(data.secrets)) return;
-        const locale = lang === "th" ? "th" : "en";
-        setSecrets([...data.secrets].sort((a, b) => a.localeCompare(b, locale)));
+        setSecrets(data.secrets);
       })
       .catch(() => {
         if (!cancelled) setSecrets([]);
@@ -608,9 +607,7 @@ export function Game() {
 
           {secrets.length ? (
             <label className="secret-pick">
-              <span className="secret-pick-label">
-                {t.pickSecret} ({secrets.length})
-              </span>
+              <span className="secret-pick-label">{t.pickSecret}</span>
               <select
                 value={showSecret && secret && secrets.includes(secret) ? secret : ""}
                 disabled={busy || loadingPuzzle}
