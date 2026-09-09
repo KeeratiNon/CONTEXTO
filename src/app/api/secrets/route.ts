@@ -9,7 +9,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const lang = parseLang(new URL(request.url).searchParams.get("lang"));
-    return Response.json({ secrets: playableSecrets(lang, loadSecrets(lang)) });
+    return Response.json(
+      { secrets: playableSecrets(lang, loadSecrets(lang)) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return jsonError(error);
   }

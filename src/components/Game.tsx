@@ -276,7 +276,7 @@ export function Game() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(`/api/secrets?lang=${lang}`)
+    void fetch(`/api/secrets?lang=${lang}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((data: { secrets?: string[] }) => {
         if (cancelled || !Array.isArray(data.secrets)) return;
@@ -608,7 +608,9 @@ export function Game() {
 
           {secrets.length ? (
             <label className="secret-pick">
-              <span className="secret-pick-label">{t.pickSecret}</span>
+              <span className="secret-pick-label">
+                {t.pickSecret} ({secrets.length})
+              </span>
               <select
                 value={showSecret && secret && secrets.includes(secret) ? secret : ""}
                 disabled={busy || loadingPuzzle}
