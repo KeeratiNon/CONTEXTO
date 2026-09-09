@@ -54,7 +54,7 @@ function normalizeHintPacks(
 export function loadHintPacks(lang: GameLang): Record<string, HintPack> {
   const packs =
     lang === "th"
-      ? (thHintPacks as Record<string, HintPack>)
+      ? (thHintPacks as unknown as Record<string, HintPack>)
       : readJsonFile<Record<string, HintPack>>(pathsFor(lang).hintPacksPath, {});
   return normalizeHintPacks(packs, lang);
 }
