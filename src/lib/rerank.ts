@@ -13,9 +13,24 @@ import { loadRerankBuckets } from "./prepared";
 import type { RerankBuckets } from "./types";
 
 export const RERANK_POOL = 120;
+const BUCKET_LIMIT = 12;
+const RERANK_MAX_TOKENS = 1600;
 
 function hasLlmRerank(): boolean {
   return Boolean(llmClient());
+}
+
+function groqErrorMessage(error: unknown): string {
+  if (error instanceof OpenAI.APIError) {
+    const body = error.error as { failed_generation?: string } | undefined;
+    const failed = body?.failed_generation?.replace(/\s+/g, " ").slice(0, 240);
+    return failed ? `${error.message} | failed_generation=${failed}` : error.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function extractJson(raw: string): { close?: unknown; far?: unknown } | null {
@@ -70,18 +85,19 @@ export async function groqRerankBuckets(
   const started = Date.now();
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const jsonMode = attempt === 1;
     try {
       const response = await client.chat.completions.create(
         withProviderParams({
           model,
           temperature: 0,
-          max_tokens: 900,
-          response_format: { type: "json_object" },
+          max_tokens: RERANK_MAX_TOKENS,
+          ...(jsonMode ? { response_format: { type: "json_object" as const } } : {}),
           messages: [
             {
               role: "system",
               content:
-                'You rerank neighbors for a semantic word game. Return only JSON {"close":["..."],"far":["..."]}.',
+                'You rerank neighbors for a semantic word game. Return only JSON {"close":["..."],"far":["..."]}. Each array has at most 12 words.',
             },
             {
               role: "user",
@@ -91,9 +107,10 @@ export async function groqRerankBuckets(
                 `Language: ${lang === "th" ? "Thai" : "English"}`,
                 `Category: ${category}`,
                 "An embedding model ranked these as close. Same category is not enough.",
-                "close = the nearest in meaning, closest first, at most 12 words.",
+                `close = the nearest in meaning, closest first, at most ${BUCKET_LIMIT} words.`,
                 "Examples: gray → black/white, not green. Congee → rice porridge, not ketchup.",
-                "far = wrong sense or unrelated. Omit ordinary same-category words from both lists.",
+                `far = wrong sense or unrelated, at most ${BUCKET_LIMIT} words. Do not dump the candidate list.`,
+                "Omit ordinary same-category words from both lists.",
                 `Candidates: ${JSON.stringify(pool)}`,
               ]
                 .filter(Boolean)
@@ -108,18 +125,26 @@ export async function groqRerankBuckets(
       };
       const raw = message?.content?.trim() || message?.reasoning || "";
       const parsed = extractJson(raw);
-      const close = asWordList(parsed?.close, allowed);
-      const far = asWordList(parsed?.far, allowed).filter((word) => !close.includes(word));
+      const close = asWordList(parsed?.close, allowed).slice(0, BUCKET_LIMIT);
+      const far = asWordList(parsed?.far, allowed)
+        .filter((word) => !close.includes(word))
+        .slice(0, BUCKET_LIMIT);
       console.info(
         `[rank] ${provider} buckets close=${close.length} far=${far.length} in ${Date.now() - started}ms`,
       );
-      if (!close.length && !far.length) return null;
+      if (!close.length && !far.length) {
+        if (attempt < 3) continue;
+        return null;
+      }
       return { close, far };
     } catch (error) {
       throwIfRateLimited(error);
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[rank] ${provider} rerank failed in ${Date.now() - started}ms:`, message);
-      return null;
+      console.warn(
+        `[rank] ${provider} rerank failed (attempt ${attempt}) in ${Date.now() - started}ms:`,
+        groqErrorMessage(error),
+      );
+      if (attempt === 3) return null;
+      await sleep(400 * attempt);
     }
   }
   return null;
