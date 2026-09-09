@@ -280,7 +280,8 @@ export function Game() {
       .then((response) => response.json())
       .then((data: { secrets?: string[] }) => {
         if (cancelled || !Array.isArray(data.secrets)) return;
-        setSecrets(data.secrets);
+        const locale = lang === "th" ? "th" : "en";
+        setSecrets([...data.secrets].sort((a, b) => a.localeCompare(b, locale)));
       })
       .catch(() => {
         if (!cancelled) setSecrets([]);
