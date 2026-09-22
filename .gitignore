@@ -46,7 +46,6 @@ yarn-error.log*
 /data/th/clues
 /data/th/models
 /data/th/raw
-/data/th/meta.json
 /data/th/th.glove.300d.playable.txt.gz
 
 # vercel

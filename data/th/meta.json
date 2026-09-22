@@ -1,0 +1,7 @@
+{
+  "provider": "glove",
+  "model": "th.glove.300d.top70k",
+  "dimensions": 300,
+  "vocabSize": 49155,
+  "seededAt": "2026-08-19T07:55:13.317Z"
+}

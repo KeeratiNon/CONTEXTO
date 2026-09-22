@@ -5,7 +5,7 @@ import { langFromPuzzleId, type GameLang } from "./lang";
 import type { RankCache, SeedMeta } from "./types";
 import { GameError } from "./types";
 import { loadWordSenses, relatednessScore, BLOCKED_WORDS_TH } from "./categories";
-import { readPreparedRanks } from "./prepared";
+import { loadPreparedMeta, readPreparedRanks } from "./prepared";
 import { rerankTopWords } from "./rerank";
 
 type WordRow = {
@@ -40,8 +40,19 @@ export async function getDb(lang: GameLang): Promise<lancedb.Connection> {
 
 export function readSeedMeta(lang: GameLang): SeedMeta | null {
   const file = pathsFor(lang).metaPath;
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, "utf8")) as SeedMeta;
+  if (fs.existsSync(file)) {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as SeedMeta;
+  }
+
+  const prepared = loadPreparedMeta(lang);
+  if (!prepared) return null;
+  return {
+    provider: "glove",
+    model: lang === "th" ? "th.glove.300d.top70k" : "glove.6B.300d",
+    dimensions: 300,
+    vocabSize: prepared.vocabSize,
+    seededAt: "prepared",
+  };
 }
 
 export function requireSeedMeta(lang: GameLang): SeedMeta {

@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     "/*": [
       "./data/th/secrets.txt",
       "./data/th/vocabulary.txt",
+      "./data/th/meta.json",
       "./data/th/prepared/**/*",
       "./data/th/thai-contexto-70k.jsonl",
       "./data/th/wn-neighbors.json",
