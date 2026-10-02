@@ -24,27 +24,16 @@ export function rankToPercent(rank: number, vocabSize: number): number {
 }
 
 export function rankToColor(rank: number): string {
-  let hue: number;
-  let sat = 78;
-  let light = 46;
-
   if (rank <= GREEN_MAX) {
     const t = (rank - 1) / Math.max(GREEN_MAX - 1, 1);
-    hue = 142 - t * 54;
-    light = 42 + t * 6;
-  } else if (rank <= YELLOW_MAX) {
-    const t = (rank - GREEN_MAX) / (YELLOW_MAX - GREEN_MAX);
-    hue = 88 - t * 50;
-    sat = 82;
-    light = 48;
-  } else {
-    const t = Math.min(1, (rank - YELLOW_MAX) / 8000);
-    hue = 38 - t * 38;
-    sat = 76;
-    light = 48 - t * 8;
+    return `hsl(${Math.round(105 - t * 23)} 22% ${Math.round(58 + t * 5)}%)`;
   }
-
-  return `hsl(${Math.round(hue)} ${sat}% ${light}%)`;
+  if (rank <= YELLOW_MAX) {
+    const t = (rank - GREEN_MAX) / (YELLOW_MAX - GREEN_MAX);
+    return `hsl(${Math.round(42 - t * 14)} 48% ${Math.round(65 - t * 5)}%)`;
+  }
+  const t = Math.min(1, (rank - YELLOW_MAX) / 8000);
+  return `hsl(${Math.round(18 - t * 10)} 39% ${Math.round(62 - t * 5)}%)`;
 }
 
 export function winCopy(guesses: number): string {

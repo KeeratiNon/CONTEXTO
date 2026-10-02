@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { pathsFor } from "./paths";
-import { GameError, HINTS_PER_LEVEL, MAX_HINTS, type GameLang, type GameMode, type PuzzleMeta, type SecretClueCache, type StoredPuzzle } from "./types";
+import { GameError, MAX_HINTS, type GameLang, type GameMode, type PuzzleMeta, type SecretClueCache, type StoredPuzzle } from "./types";
 import { cluesMatchLang, dailyPuzzleId, langFromPuzzleId, parseDailyPuzzleId } from "./lang";
 import { gameNumberForDate } from "./date";
 import { loadSecrets, loadVocabulary, normalizeWord, pickDailySecret, pickUnlimitedSecret } from "./words";
@@ -71,23 +71,29 @@ function findCluesInPuzzles(secret: string, lang: GameLang): string[] | null {
   return null;
 }
 
-/** Reuse a puzzle's chosen 3 hints, or pick 1/3 from each prepared level. */
+/** Use the current prepared Thai hints, including for previously saved puzzles. */
 export function hydratePuzzleClues(puzzle: StoredPuzzle): string[] | null {
   const lang = puzzle.lang ?? langFromPuzzleId(puzzle.id);
   const own = usableAiClues(puzzle.clues, puzzle.cluesSource, lang, puzzle.secret);
-  if (own) return own;
-
+  if (lang !== "th" && own) return own;
   const pack = loadHintPack(puzzle.secret, lang);
   if (pack) {
     const planned = pickPlannedClues(pack, puzzle.id);
     if (planned.length === MAX_HINTS && cluesMatchLang(planned, lang)) {
-      console.info(`[hints] pick 1/${HINTS_PER_LEVEL} per level for ${puzzle.secret}`);
-      puzzle.clues = planned;
-      puzzle.cluesSource = "ai";
-      savePuzzle(puzzle);
+      if (
+        puzzle.cluesSource !== "ai" ||
+        puzzle.clues?.length !== planned.length ||
+        puzzle.clues.some((clue, index) => clue !== planned[index])
+      ) {
+        puzzle.clues = planned;
+        puzzle.cluesSource = "ai";
+        savePuzzle(puzzle);
+      }
       return planned;
     }
   }
+
+  if (own) return own;
 
   const shared = readCluesForSecret(puzzle.secret, lang) ?? findCluesInPuzzles(puzzle.secret, lang);
   if (!shared) return null;

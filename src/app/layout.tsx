@@ -19,9 +19,9 @@ const mono = Source_Code_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "Contexto",
+  title: "ปริศนาคำไทย",
   description:
-    "Find the secret word. Each guess is ranked by semantic similarity using embeddings and a vector database.",
+    "เกมทายคำปริศนาภาษาไทย ลองเดาคำและตามรอยคำใบ้เพื่อค้นหาคำลับประจำวัน",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
